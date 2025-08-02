@@ -76,49 +76,7 @@ export default function RestaurantCard({ restaurant, userLocation }: RestaurantC
     
     const directionsUrl = getDirectionsUrl();
     
-    // Try to detect if we're on mobile and use app-specific URLs
-    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-    
-    if (isMobile && restaurant.geometry) {
-      // Try to open in native apps first
-      const coords = `${restaurant.geometry.lat},${restaurant.geometry.lng}`;
-      const query = encodeURIComponent(restaurant.name);
-      
-      // iOS: Try to open in Apple Maps, fallback to Google Maps
-      if (/iPad|iPhone|iPod/.test(navigator.userAgent)) {
-        const appleMapsUrl = userLocation 
-          ? `maps://maps.apple.com/?daddr=${coords}&saddr=${userLocation.lat},${userLocation.lng}`
-          : `maps://maps.apple.com/?daddr=${coords}`;
-        
-        // Try Apple Maps first, fallback to Google Maps
-        window.location.href = appleMapsUrl;
-        
-        // Fallback to Google Maps if Apple Maps fails
-        setTimeout(() => {
-          window.open(directionsUrl, '_blank');
-        }, 500);
-        
-        return;
-      }
-      
-      // Android: Try Google Maps app intent
-      if (/Android/i.test(navigator.userAgent)) {
-        const androidIntent = userLocation
-          ? `intent://maps.google.com/maps?daddr=${coords}&saddr=${userLocation.lat},${userLocation.lng}#Intent;scheme=https;package=com.google.android.apps.maps;end`
-          : `intent://maps.google.com/maps?daddr=${coords}#Intent;scheme=https;package=com.google.android.apps.maps;end`;
-        
-        window.location.href = androidIntent;
-        
-        // Fallback to web if app intent fails
-        setTimeout(() => {
-          window.open(directionsUrl, '_blank');
-        }, 500);
-        
-        return;
-      }
-    }
-    
-    // Default: open in web browser
+    // Always open Google Maps in browser - simple and consistent across all devices
     window.open(directionsUrl, '_blank');
   };
 

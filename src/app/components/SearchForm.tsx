@@ -60,8 +60,8 @@ const SearchForm: React.FC<SearchFormProps> = ({ onSearch, loading, onSortChange
         autocompleteRef.current = new google.maps.places.Autocomplete(
           locationInputRef.current,
           {
-            types: ['(cities)'],
-            fields: ['place_id', 'formatted_address', 'geometry', 'name']
+            types: ['establishment', 'geocode'],
+            fields: ['place_id', 'formatted_address', 'geometry', 'name', 'types']
           }
         );
 
