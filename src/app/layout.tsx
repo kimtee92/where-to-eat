@@ -28,6 +28,30 @@ export default function RootLayout({
             src={`https://maps.googleapis.com/maps/api/js?key=${googleMapsApiKey}&libraries=places`}
           ></script>
         )}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              // Simple detection without callback - more reliable
+              (function checkGoogleMaps() {
+                if (window.google && window.google.maps && window.google.maps.places) {
+                  console.log('✅ Google Maps API fully loaded');
+                  window.googleMapsReady = true;
+                } else {
+                  setTimeout(checkGoogleMaps, 100);
+                }
+              })();
+              
+              // Error handling for script loading
+              window.addEventListener('error', function(e) {
+                if (e.target && e.target.src && e.target.src.includes('maps.googleapis.com')) {
+                  console.error('❌ Google Maps API script failed to load');
+                  console.error('URL:', e.target.src);
+                  console.error('Check: API key, internet connection, CORS settings');
+                }
+              }, true);
+            `
+          }}
+        />
       </head>
       <body className={inter.className}>
         {children}
