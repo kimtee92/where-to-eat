@@ -10,13 +10,17 @@ interface SearchFormProps {
   onGetUserLocation?: () => Promise<{lat: number, lng: number}>;
 }
 
-export default function SearchForm({ onSearch, loading, onSortChange, currentSort, onGetUserLocation }: SearchFormProps) {
+const SearchForm: React.FC<SearchFormProps> = ({ onSearch, loading, onSortChange, currentSort, onGetUserLocation }) => {
   const [isClient, setIsClient] = useState(false);
   const [location, setLocation] = useState('');
   const [preferences, setPreferences] = useState('');
   const [locationLoading, setLocationLoading] = useState(false);
   const [selectedLocationCoords, setSelectedLocationCoords] = useState<{lat: number, lng: number} | null>(null);
-  const [searchRadius, setSearchRadius] = useState(10); // Default to 10km
+  const [searchRadius, setSearchRadius] = useState(10);
+  const [autocompleteReady, setAutocompleteReady] = useState(false);
+  const [googleMapsLoaded, setGoogleMapsLoaded] = useState(false);
+  const [loadingError, setLoadingError] = useState(false);
+  
   const locationInputRef = useRef<HTMLInputElement>(null);
   const autocompleteRef = useRef<google.maps.places.Autocomplete | null>(null);
 
@@ -26,116 +30,137 @@ export default function SearchForm({ onSearch, loading, onSortChange, currentSor
   }, []);
 
   useEffect(() => {
-    // Initialize Google Places Autocomplete when the component mounts
-    const initAutocomplete = () => {
-      if (window.google && locationInputRef.current && !autocompleteRef.current) {
-        autocompleteRef.current = new window.google.maps.places.Autocomplete(
+    if (!isClient) return;
+
+    let isComponentMounted = true;
+
+    const initializeAutocomplete = () => {
+      if (!isComponentMounted || !locationInputRef.current) {
+        console.log('Component not mounted or input ref not available');
+        return;
+      }
+
+      // Check if Google Maps is available
+      if (!window.google?.maps?.places?.Autocomplete) {
+        console.log('Google Maps Places API not available');
+        setLoadingError(true);
+        return;
+      }
+
+      try {
+        console.log('Initializing Google Places Autocomplete...');
+
+        // Clean up existing autocomplete
+        if (autocompleteRef.current) {
+          google.maps.event.clearInstanceListeners(autocompleteRef.current);
+          autocompleteRef.current = null;
+        }
+
+        // Create new autocomplete instance
+        autocompleteRef.current = new google.maps.places.Autocomplete(
           locationInputRef.current,
           {
             types: ['(cities)'],
-            fields: ['place_id', 'formatted_address', 'name', 'geometry']
+            fields: ['place_id', 'formatted_address', 'geometry', 'name']
           }
-        ) as any;
+        );
 
-        autocompleteRef.current!.addListener('place_changed', () => {
+        // Add place changed listener
+        autocompleteRef.current.addListener('place_changed', () => {
           const place = autocompleteRef.current?.getPlace();
-          if (place && place.formatted_address) {
-            setLocation(place.formatted_address);
-            
-            // Extract coordinates if available
-            if (place.geometry && place.geometry.location) {
-              const location = place.geometry.location;
-              const lat = typeof location.lat === 'function' ? location.lat() : location.lat;
-              const lng = typeof location.lng === 'function' ? location.lng() : location.lng;
-              
-              const coords = { lat: lat as number, lng: lng as number };
-              setSelectedLocationCoords(coords);
-            }
+          if (place && place.geometry && place.geometry.location) {
+            console.log('Place selected:', place);
+            const coords = {
+              lat: place.geometry.location.lat(),
+              lng: place.geometry.location.lng()
+            };
+            setSelectedLocationCoords(coords);
+            setLocation(place.formatted_address || place.name || '');
           }
         });
+
+        setAutocompleteReady(true);
+        setLoadingError(false);
+        console.log('Google Places Autocomplete initialized successfully');
+      } catch (error) {
+        console.error('Error initializing autocomplete:', error);
+        setLoadingError(true);
+        setAutocompleteReady(false);
       }
     };
 
-    // Check if Google Maps API is loaded
-    if (window.google) {
-      initAutocomplete();
+    // Listen for the Google Maps loaded event from layout.tsx
+    const handleGoogleMapsLoaded = () => {
+      console.log('Google Maps loaded event received');
+      setGoogleMapsLoaded(true);
+      // Add a small delay to ensure the API is fully ready
+      setTimeout(initializeAutocomplete, 100);
+    };
+
+    // Check if Google Maps is already loaded
+    if (window.google?.maps?.places?.Autocomplete) {
+      console.log('Google Maps already loaded');
+      setGoogleMapsLoaded(true);
+      initializeAutocomplete();
     } else {
-      // Wait for Google Maps API to load
-      const checkGoogle = setInterval(() => {
-        if (window.google) {
-          initAutocomplete();
-          clearInterval(checkGoogle);
+      // Listen for the load event
+      window.addEventListener('googleMapsLoaded', handleGoogleMapsLoaded);
+      
+      // Fallback: Poll for Google Maps availability
+      let pollCount = 0;
+      const maxPolls = 50; // 10 seconds max
+      const pollInterval = setInterval(() => {
+        pollCount++;
+        if (window.google?.maps?.places?.Autocomplete) {
+          console.log('Google Maps detected via polling');
+          clearInterval(pollInterval);
+          setGoogleMapsLoaded(true);
+          initializeAutocomplete();
+        } else if (pollCount >= maxPolls) {
+          console.error('Google Maps failed to load after polling');
+          clearInterval(pollInterval);
+          setLoadingError(true);
         }
-      }, 100);
+      }, 200);
 
-      return () => clearInterval(checkGoogle);
+      return () => {
+        window.removeEventListener('googleMapsLoaded', handleGoogleMapsLoaded);
+        clearInterval(pollInterval);
+      };
     }
-  }, []);
 
-  const getUserLocation = async () => {
+    return () => {
+      isComponentMounted = false;
+      if (autocompleteRef.current) {
+        google.maps.event.clearInstanceListeners(autocompleteRef.current);
+        autocompleteRef.current = null;
+      }
+    };
+  }, [isClient]);
+
+  const handleLocationInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setLocation(e.target.value);
+    // Clear selected coordinates when user types manually
+    if (selectedLocationCoords) {
+      setSelectedLocationCoords(null);
+    }
+  };
+
+  const handleGetCurrentLocation = async () => {
+    if (!onGetUserLocation) {
+      console.log('No location handler provided');
+      return;
+    }
+
     setLocationLoading(true);
     try {
-      if (onGetUserLocation) {
-        const coords = await onGetUserLocation();
-        setLocation(`${coords.lat}, ${coords.lng}`);
-        setSelectedLocationCoords(coords); // Set the coordinates for distance calculation
-      } else {
-        // Fallback to direct geolocation
-        if (navigator.geolocation) {
-          // Enhanced options for mobile devices
-          const options = {
-            enableHighAccuracy: true, // Use GPS if available
-            timeout: 15000, // 15 second timeout
-            maximumAge: 300000 // Accept location up to 5 minutes old
-          };
-
-          navigator.geolocation.getCurrentPosition(
-            (position) => {
-              const coords = {
-                lat: position.coords.latitude,
-                lng: position.coords.longitude
-              };
-              setLocation(`${coords.lat}, ${coords.lng}`);
-              setSelectedLocationCoords(coords); // Set the coordinates for distance calculation
-              setLocationLoading(false);
-            },
-            (error) => {
-              console.error('❌ Geolocation error:', {
-                code: error.code,
-                message: error.message,
-                errorType: error.code === 1 ? 'PERMISSION_DENIED' : 
-                          error.code === 2 ? 'POSITION_UNAVAILABLE' :
-                          error.code === 3 ? 'TIMEOUT' : 'UNKNOWN'
-              });
-              setLocationLoading(false);
-              
-              let errorMessage = 'Unable to get your location. ';
-              switch(error.code) {
-                case error.PERMISSION_DENIED:
-                  errorMessage += 'Please enable location permissions in your browser settings.';
-                  break;
-                case error.POSITION_UNAVAILABLE:
-                  errorMessage += 'Location services are unavailable.';
-                  break;
-                case error.TIMEOUT:
-                  errorMessage += 'Location request timed out.';
-                  break;
-                default:
-                  errorMessage += 'Please enter your location manually.';
-              }
-              alert(errorMessage);
-            },
-            options
-          );
-        } else {
-          console.error('❌ Geolocation not supported');
-          setLocationLoading(false);
-          alert('Geolocation is not supported by this browser. Please enter your location manually.');
-        }
-      }
+      const coords = await onGetUserLocation();
+      console.log('Got user location:', coords);
+      setSelectedLocationCoords(coords);
+      setLocation('Current Location');
     } catch (error) {
-      console.error('Error getting location:', error);
-      alert('Unable to get your location. Please enter it manually.');
+      console.error('Error getting user location:', error);
+      alert('Unable to get your current location. Please enter a location manually.');
     } finally {
       setLocationLoading(false);
     }
@@ -144,200 +169,184 @@ export default function SearchForm({ onSearch, loading, onSortChange, currentSor
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (location.trim()) {
-      onSearch(location.trim(), preferences.trim(), selectedLocationCoords || undefined, searchRadius);
+      onSearch(location, preferences, selectedLocationCoords || undefined, searchRadius);
     }
   };
 
-  // Prevent hydration mismatch by only rendering form after client-side hydration
+  const radiusOptions = [
+    { value: 1, label: '1 km' },
+    { value: 5, label: '5 km' },
+    { value: 10, label: '10 km' },
+    { value: 25, label: '25 km' },
+    { value: 50, label: '50 km' }
+  ];
+
   if (!isClient) {
-    return (
-      <div className="d-flex justify-content-center py-5">
-        <div className="spinner-border text-flame-scarlet" role="status">
-          <span className="visually-hidden">Loading...</span>
-        </div>
-      </div>
-    );
+    return null; // Prevent hydration mismatch
   }
 
   return (
-    <form onSubmit={handleSubmit}>
-      <div className="row g-4">
+    <form onSubmit={handleSubmit} className="mb-4">
+      <div className="row g-3">
         {/* Location Input */}
-        <div className="col-12">
-          <label htmlFor="location" className="form-label fw-semibold text-charcoal-gray">
-            <i className="bi bi-geo-alt-fill me-2 text-flame-scarlet"></i>
+        <div className="col-md-6">
+          <label htmlFor="location" className="form-label">
+            <i className="bi bi-geo-alt me-2"></i>
             Location
           </label>
           <div className="input-group">
             <input
               ref={locationInputRef}
-              id="location"
               type="text"
+              id="location"
+              className="form-control"
+              placeholder="Enter city or address..."
               value={location}
-              onChange={(e) => setLocation(e.target.value)}
-              placeholder="Start typing a city or location..."
-              className="form-control form-control-appetizing"
+              onChange={handleLocationInputChange}
               required
             />
-            <button
-              type="button"
-              onClick={getUserLocation}
-              disabled={locationLoading}
-              className="btn btn-fresh-green"
-            >
-              {locationLoading ? (
-                <span className="spinner-border spinner-border-sm" role="status"></span>
-              ) : (
-                <>
-                  <i className="bi bi-crosshair me-1"></i>
-                  Use My Location
-                </>
-              )}
-            </button>
+            {onGetUserLocation && (
+              <button
+                type="button"
+                className="btn btn-outline-secondary"
+                onClick={handleGetCurrentLocation}
+                disabled={locationLoading}
+                title="Use current location"
+              >
+                {locationLoading ? (
+                  <div className="spinner-border spinner-border-sm" role="status">
+                    <span className="visually-hidden">Loading...</span>
+                  </div>
+                ) : (
+                  <i className="bi bi-crosshair"></i>
+                )}
+              </button>
+            )}
           </div>
-          <div className="form-text">
-            Start typing and select from suggestions, or click "Use My Location"
-            <br />
-            <small className="text-muted">
-              📱 Mobile users: Allow location access when prompted for best results
-            </small>
-          </div>
-        </div>
-
-        {/* Preferences Input */}
-        <div className="col-12">
-          <label htmlFor="preferences" className="form-label fw-semibold text-charcoal-gray">
-            <i className="bi bi-chat-text-fill me-2 text-flame-scarlet"></i>
-            What are you craving?
-          </label>
-          <textarea
-            id="preferences"
-            value={preferences}
-            onChange={(e) => setPreferences(e.target.value)}
-            placeholder="e.g., I want to eat Mexican food for a family lunch, preferably vegetarian options"
-            className="form-control form-control-appetizing"
-            rows={3}
-          />
-          <div className="form-text">
-            Describe what you're looking for: cuisine type, occasion, dietary needs, price range, atmosphere, etc.
+          
+          {/* Status indicators */}
+          <div className="mt-1">
+            {!googleMapsLoaded && !loadingError && (
+              <small className="text-muted">
+                <i className="bi bi-hourglass-split me-1"></i>
+                Loading location services...
+              </small>
+            )}
+            {googleMapsLoaded && autocompleteReady && (
+              <small className="text-success">
+                <i className="bi bi-check-circle me-1"></i>
+                Location suggestions ready
+              </small>
+            )}
+            {loadingError && (
+              <small className="text-warning">
+                <i className="bi bi-exclamation-triangle me-1"></i>
+                Location suggestions unavailable
+              </small>
+            )}
+            {selectedLocationCoords && (
+              <small className="text-info">
+                <i className="bi bi-pin-map me-1"></i>
+                Specific location selected
+              </small>
+            )}
           </div>
         </div>
 
         {/* Search Radius */}
-        <div className="col-12">
-          <label htmlFor="searchRadius" className="form-label fw-semibold text-charcoal-gray">
-            <i className="bi bi-bullseye me-2 text-flame-scarlet"></i>
-            Search Radius: {searchRadius} km
+        <div className="col-md-3">
+          <label htmlFor="radius" className="form-label">
+            <i className="bi bi-circle me-2"></i>
+            Search Radius
           </label>
-          <div className="position-relative">
-            <input
-              type="range"
-              id="searchRadius"
-              min="5"
-              max="50"
-              step="5"
-              value={searchRadius}
-              onChange={(e) => setSearchRadius(Number(e.target.value))}
-              className="form-range custom-slider"
-              style={{
-                background: `linear-gradient(to right, #F5C842 0%, #F5C842 ${((searchRadius - 5) / 45) * 100}%, #e9ecef ${((searchRadius - 5) / 45) * 100}%, #e9ecef 100%)`,
-                height: '8px',
-                borderRadius: '4px',
-                outline: 'none',
-                appearance: 'none',
-                WebkitAppearance: 'none'
-              }}
-            />
-            <style jsx>{`
-              .custom-slider::-webkit-slider-thumb {
-                appearance: none;
-                height: 20px;
-                width: 20px;
-                border-radius: 50%;
-                background: #E53E3E;
-                cursor: pointer;
-                border: 2px solid #ffffff;
-                box-shadow: 0 2px 6px rgba(0,0,0,0.2);
-                transition: all 0.2s ease;
-              }
-              .custom-slider::-moz-range-thumb {
-                height: 20px;
-                width: 20px;
-                border-radius: 50%;
-                background: #E53E3E;
-                cursor: pointer;
-                border: 2px solid #ffffff;
-                box-shadow: 0 2px 6px rgba(0,0,0,0.2);
-                transition: all 0.2s ease;
-              }
-              .custom-slider:focus::-webkit-slider-thumb {
-                box-shadow: 0 0 0 3px rgba(245, 200, 66, 0.3);
-              }
-              .custom-slider:hover::-webkit-slider-thumb {
-                transform: scale(1.1);
-              }
-            `}</style>
-          </div>
-          <div className="d-flex justify-content-between text-muted small mt-1">
-            <span>5 km</span>
-            <span>25 km</span>
-            <span>50 km</span>
-          </div>
-          <div className="form-text">
-            How far are you willing to travel for great food?
-          </div>
+          <select
+            id="radius"
+            className="form-select"
+            value={searchRadius}
+            onChange={(e) => setSearchRadius(Number(e.target.value))}
+          >
+            {radiusOptions.map(option => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
         </div>
-      </div>
 
-      {/* Sort Options */}
-      {onSortChange && (
-        <div className="row g-4 mt-2">
-          <div className="col-12">
-            <label htmlFor="sortBy" className="form-label fw-semibold">
-              <i className="bi bi-sort-down me-2 text-info"></i>
-              Sort Results By
+        {/* Sort By */}
+        {onSortChange && (
+          <div className="col-md-3">
+            <label htmlFor="sortBy" className="form-label">
+              <i className="bi bi-sort-down me-2"></i>
+              Sort By
             </label>
             <select
               id="sortBy"
+              className="form-select"
               value={currentSort || 'relevance'}
               onChange={(e) => onSortChange(e.target.value as 'relevance' | 'distance' | 'rating')}
-              className="form-select form-select-appetizing"
             >
-              <option value="relevance">AI Relevance</option>
-              <option value="distance">Distance (Closest First)</option>
-              <option value="rating">Rating (Highest First)</option>
+              <option value="relevance">Relevance</option>
+              <option value="distance">Distance</option>
+              <option value="rating">Rating</option>
             </select>
-            <div className="form-text">
-              Choose how to order your restaurant results
-            </div>
+          </div>
+        )}
+
+        {/* Preferences */}
+        <div className="col-12">
+          <label htmlFor="preferences" className="form-label">
+            <i className="bi bi-heart me-2"></i>
+            Food Preferences (Optional)
+          </label>
+          <input
+            type="text"
+            id="preferences"
+            className="form-control"
+            placeholder="e.g., Italian, vegetarian, spicy food, romantic atmosphere..."
+            value={preferences}
+            onChange={(e) => setPreferences(e.target.value)}
+          />
+          <div className="form-text">
+            Describe the type of cuisine, dietary restrictions, or atmosphere you're looking for.
           </div>
         </div>
-      )}
 
-      {/* Submit Button */}
-      <div className="text-center mt-5">
-        <button
-          type="submit"
-          disabled={loading || !location.trim()}
-          className={`btn btn-lg px-5 py-3 fw-bold rounded-3 ${
-            loading || !location.trim()
-              ? 'btn-secondary disabled'
-              : 'btn-flame-scarlet'
-          }`}
-        >
-          {loading ? (
-            <>
-              <span className="spinner-border spinner-border-sm me-2" role="status"></span>
-              Finding Great Restaurants...
-            </>
-          ) : (
-            <>
-              <i className="bi bi-search me-2"></i>
-              Find Restaurants
-            </>
-          )}
-        </button>
+        {/* Open Now Filter Info */}
+        <div className="col-12">
+          <div className="alert alert-info py-2 mb-0" role="alert">
+            <i className="bi bi-clock me-2"></i>
+            <small>
+              <strong>Showing only restaurants that are currently open</strong> based on their posted hours.
+            </small>
+          </div>
+        </div>
+
+        {/* Search Button */}
+        <div className="col-12">
+          <button
+            type="submit"
+            className="btn btn-primary btn-lg w-100"
+            disabled={loading || !location.trim()}
+          >
+            {loading ? (
+              <>
+                <div className="spinner-border spinner-border-sm me-2" role="status">
+                  <span className="visually-hidden">Loading...</span>
+                </div>
+                Searching...
+              </>
+            ) : (
+              <>
+                <i className="bi bi-search me-2"></i>
+                Find Restaurants
+              </>
+            )}
+          </button>
+        </div>
       </div>
     </form>
   );
-}
+};
+
+export default SearchForm;

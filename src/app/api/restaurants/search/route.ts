@@ -23,6 +23,69 @@ function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
   return distance;
 }
 
+// Helper function to check if a restaurant is currently open
+function isRestaurantOpen(openingHours?: string[]): boolean {
+  if (!openingHours || openingHours.length === 0) {
+    return true; // Assume open if no hours provided
+  }
+
+  const now = new Date();
+  const currentDay = now.getDay(); // 0 = Sunday, 1 = Monday, etc.
+  const currentTime = now.getHours() * 100 + now.getMinutes(); // e.g., 14:30 = 1430
+
+  // Map day numbers to day names
+  const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+  const todayName = dayNames[currentDay];
+
+  // Find today's hours
+  const todayHours = openingHours.find(hours => 
+    hours.toLowerCase().includes(todayName)
+  );
+
+  if (!todayHours) {
+    return false; // No hours found for today
+  }
+
+  // Check if closed today
+  if (todayHours.toLowerCase().includes('closed')) {
+    return false;
+  }
+
+  // Extract time range (e.g., "Monday: 9:00 AM – 9:00 PM")
+  const timeMatch = todayHours.match(/(\d{1,2}):(\d{2})\s*(AM|PM)\s*[–-]\s*(\d{1,2}):(\d{2})\s*(AM|PM)/i);
+  
+  if (!timeMatch) {
+    return true; // Assume open if can't parse hours
+  }
+
+  const [, openHour, openMin, openPeriod, closeHour, closeMin, closePeriod] = timeMatch;
+  
+  // Convert to 24-hour format
+  let openTime = parseInt(openHour) * 100 + parseInt(openMin);
+  let closeTime = parseInt(closeHour) * 100 + parseInt(closeMin);
+  
+  if (openPeriod.toUpperCase() === 'PM' && parseInt(openHour) !== 12) {
+    openTime += 1200;
+  }
+  if (openPeriod.toUpperCase() === 'AM' && parseInt(openHour) === 12) {
+    openTime = parseInt(openMin); // 12 AM = 00:xx
+  }
+  
+  if (closePeriod.toUpperCase() === 'PM' && parseInt(closeHour) !== 12) {
+    closeTime += 1200;
+  }
+  if (closePeriod.toUpperCase() === 'AM' && parseInt(closeHour) === 12) {
+    closeTime = parseInt(closeMin); // 12 AM = 00:xx
+  }
+
+  // Handle overnight hours (e.g., 9 PM - 2 AM)
+  if (closeTime < openTime) {
+    return currentTime >= openTime || currentTime <= closeTime;
+  }
+  
+  return currentTime >= openTime && currentTime <= closeTime;
+}
+
 // Helper function to check if restaurant's opening time has already passed today
 function hasOpeningTimePassed(openingHours?: string[]): boolean {
   if (!openingHours || openingHours.length === 0) return false;
@@ -346,14 +409,14 @@ Respond with just one sentence, no quotes or extra text.`;
 
     const restaurants = (await Promise.all(restaurantPromises)).filter(Boolean) as Restaurant[];
 
-    // Filter out restaurants where opening time has already passed and that are beyond the radius
-    const availableRestaurants = restaurants.filter(restaurant => {
-      // First check opening hours
-      if (restaurant.isOpen) {
-        // Restaurant is currently open, now check distance
-      } else {
-        // If opening time has passed today, exclude it
-        if (hasOpeningTimePassed(restaurant.openingHours)) return false;
+    // Filter to only show currently open restaurants and apply distance filtering
+    const availableRestaurants = restaurants.map(restaurant => ({
+      ...restaurant,
+      isOpen: isRestaurantOpen(restaurant.openingHours)
+    })).filter(restaurant => {
+      // Only show currently open restaurants
+      if (!restaurant.isOpen) {
+        return false;
       }
       
       // Check distance if user coordinates are available
@@ -365,6 +428,8 @@ Respond with just one sentence, no quotes or extra text.`;
       // If no distance info, include the restaurant
       return true;
     });
+
+    console.log(`Filtered to ${availableRestaurants.length} open restaurants out of ${restaurants.length} total`);
 
     // Step 3: Use Claude AI to analyze and rank the restaurants
     const claudePrompt = `
