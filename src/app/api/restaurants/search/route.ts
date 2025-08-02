@@ -23,13 +23,52 @@ function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
   return distance;
 }
 
+// Helper function to get timezone and local time for a location
+async function getLocationTime(lat: number, lng: number): Promise<Date> {
+  try {
+    const timestamp = Math.floor(Date.now() / 1000);
+    const timezoneResponse = await googleMapsClient.timezone({
+      params: {
+        location: `${lat},${lng}`,
+        timestamp: timestamp,
+        key: process.env.GOOGLE_PLACES_API_KEY!,
+      },
+    });
+
+    if (timezoneResponse.data.status === 'OK') {
+      const { dstOffset, rawOffset } = timezoneResponse.data;
+      const totalOffsetSeconds = dstOffset + rawOffset; // Total offset in seconds from UTC
+      
+      // Create a new Date object representing the local time at the target location
+      // We need to get the UTC time and then adjust it by the location's offset
+      const now = new Date();
+      const utcTime = now.getTime() + (now.getTimezoneOffset() * 60 * 1000); // Convert to true UTC
+      const localTime = new Date(utcTime + (totalOffsetSeconds * 1000));
+      
+      console.log(`Timezone calculation for ${lat},${lng}:`);
+      console.log(`  Raw offset: ${rawOffset}s, DST offset: ${dstOffset}s, Total: ${totalOffsetSeconds}s`);
+      console.log(`  Browser local time: ${now.toString()}`);
+      console.log(`  UTC time: ${new Date(utcTime).toISOString()}`);
+      console.log(`  Target location time: ${localTime.toString()}`);
+      
+      return localTime;
+    }
+  } catch (error) {
+    console.error('Error getting timezone:', error);
+  }
+  
+  // Fallback to current time if timezone API fails
+  return new Date();
+}
+
 // Helper function to check if a restaurant is currently open (fallback for when Google doesn't provide open_now)
-function isRestaurantOpen(openingHours?: string[]): boolean {
+// Helper function to check if a restaurant is currently open (fallback for when Google doesn't provide open_now)
+function isRestaurantOpen(openingHours?: string[], currentTime?: Date): boolean {
   if (!openingHours || openingHours.length === 0) {
     return false; // Assume closed if no hours provided (likely temporarily closed)
   }
 
-  const now = new Date();
+  const now = currentTime || new Date();
   const currentDay = now.getDay(); // 0 = Sunday, 1 = Monday, etc.
   const currentHour = now.getHours();
   const currentMinute = now.getMinutes();
@@ -133,12 +172,12 @@ function isRestaurantOpen(openingHours?: string[]): boolean {
 }
 
 // Helper function to check if restaurant's opening time has already passed today
-function hasOpeningTimePassed(openingHours?: string[]): boolean {
+function hasOpeningTimePassed(openingHours?: string[], currentTime?: Date): boolean {
   if (!openingHours || openingHours.length === 0) return false;
   
-  const now = new Date();
+  const now = currentTime || new Date();
   const currentDay = now.getDay(); // 0 = Sunday, 1 = Monday, etc.
-  const currentTime = now.getHours() * 60 + now.getMinutes(); // Current time in minutes
+  const currentTimeMinutes = now.getHours() * 60 + now.getMinutes(); // Current time in minutes
   
   // Get today's hours
   const todayHours = openingHours[currentDay === 0 ? 6 : currentDay - 1]; // Adjust for Google's format
@@ -159,14 +198,14 @@ function hasOpeningTimePassed(openingHours?: string[]): boolean {
     const openingTimeInMinutes = openingHour * 60 + openingMinute;
     
     // Return true if current time has passed opening time
-    return currentTime > openingTimeInMinutes;
+    return currentTimeMinutes > openingTimeInMinutes;
   }
   
   return false;
 }
 
 // Helper function to get real-time status information including overnight period details
-function getRealTimeStatus(openingHours?: string[], googleOpenNow?: boolean): {
+function getRealTimeStatus(openingHours?: string[], googleOpenNow?: boolean, currentTime?: Date): {
   isOpen: boolean;
   currentPeriod?: {
     day: string;
@@ -183,7 +222,7 @@ function getRealTimeStatus(openingHours?: string[], googleOpenNow?: boolean): {
     };
   }
 
-  const now = new Date();
+  const now = currentTime || new Date();
   const currentDay = now.getDay(); // 0 = Sunday, 1 = Monday, etc.
   const currentHour = now.getHours();
   const currentMinute = now.getMinutes();
@@ -564,8 +603,17 @@ export async function POST(request: NextRequest) {
         const details = detailsResponse.data.result;
         const isOpenNow = details.opening_hours?.open_now ?? false;
         
-        // Also check with our custom logic for comparison
-        const customOpenCheck = isRestaurantOpen(details.opening_hours?.weekday_text);
+        // Get the local time for this restaurant's location
+        let restaurantLocalTime = new Date(); // Fallback to current time
+        if (details.geometry?.location) {
+          restaurantLocalTime = await getLocationTime(
+            details.geometry.location.lat,
+            details.geometry.location.lng
+          );
+        }
+        
+        // Also check with our custom logic for comparison using restaurant's local time
+        const customOpenCheck = isRestaurantOpen(details.opening_hours?.weekday_text, restaurantLocalTime);
 
         // Skip places with no opening hours data or temporarily closed status
         if (!details.opening_hours?.weekday_text || details.business_status === 'CLOSED_TEMPORARILY') {
@@ -573,14 +621,15 @@ export async function POST(request: NextRequest) {
           return null;
         }
 
-        // Skip if Google explicitly says it's closed or has no hours
-        if (details.opening_hours?.open_now !== true) {
-          console.log(`Skipping ${details.name} - Google says closed or unknown status`);
-          return null;
-        }
+        // Don't filter by Google's open_now here - let our timezone-aware logic decide
+        // Google's open_now might use different timezone calculations
 
         // Debug logging to check what Google is returning vs our logic
+        const userLocalTime = new Date();
         console.log(`Restaurant: ${details.name}`);
+        console.log(`User local time (Sydney): ${userLocalTime.toString()}`);
+        console.log(`Restaurant local time (Manila): ${restaurantLocalTime.toString()}`);
+        console.log(`Time difference should be ~2 hours (Manila behind Sydney)`);
         console.log(`Google open_now: ${details.opening_hours?.open_now}`);
         console.log(`Business status: ${details.business_status || 'Not specified'}`);
         console.log(`Has opening hours: ${!!details.opening_hours?.weekday_text}`);
@@ -591,14 +640,11 @@ export async function POST(request: NextRequest) {
           console.log(`❌ Will skip - No opening hours data available`);
         } else if (details.business_status === 'CLOSED_TEMPORARILY') {
           console.log(`❌ Will skip - Business temporarily closed`);
-        } else if (details.opening_hours?.open_now !== true) {
-          console.log(`❌ Will skip - Google says currently closed or unknown`);
         } else {
-          console.log(`✅ Will process - Passes initial filters`);
+          console.log(`✅ Will process - Passes initial filters (will check timezone-aware status next)`);
         }
         if (details.opening_hours?.weekday_text) {
-          const now = new Date();
-          const currentDay = now.getDay();
+          const currentDay = restaurantLocalTime.getDay();
           const dayNames = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
           const googleDayIndex = currentDay === 0 ? 6 : currentDay - 1;
           const todayName = dayNames[googleDayIndex];
@@ -608,7 +654,7 @@ export async function POST(request: NextRequest) {
           const todaysHoursEntry = details.opening_hours.weekday_text.find(h => h.toLowerCase().includes(todayName));
           const yesterdaysHoursEntry = details.opening_hours.weekday_text.find(h => h.toLowerCase().includes(yesterdayName));
           
-          console.log(`Today is: ${['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][currentDay]} (${now.getHours()}:${now.getMinutes().toString().padStart(2, '0')})`);
+          console.log(`Restaurant local time: ${['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][currentDay]} (${restaurantLocalTime.getHours()}:${restaurantLocalTime.getMinutes().toString().padStart(2, '0')})`);
           console.log(`Today's hours: ${todaysHoursEntry || 'Not found'}`);
           console.log(`Yesterday's hours: ${yesterdaysHoursEntry || 'Not found'}`);
           
@@ -627,7 +673,7 @@ export async function POST(request: NextRequest) {
               const [, openHour, openMin, openPeriod, closeHour, closeMin, closePeriod] = timeMatch;
               console.log(`Parsed yesterday: ${openHour}:${openMin || '00'} ${openPeriod} - ${closeHour}:${closeMin || '00'} ${closePeriod}`);
               
-              // Check if we're in yesterday's overnight period
+              // Check if we're in yesterday's overnight period using restaurant's local time
               let closeTimeInMinutes = parseInt(closeHour) * 60 + parseInt(closeMin || '0');
               if (closePeriod.toLowerCase() === 'pm' && parseInt(closeHour) !== 12) {
                 closeTimeInMinutes += 12 * 60;
@@ -636,9 +682,9 @@ export async function POST(request: NextRequest) {
                 closeTimeInMinutes = parseInt(closeMin || '0');
               }
               
-              const currentTimeInMinutes = now.getHours() * 60 + now.getMinutes();
+              const currentTimeInMinutes = restaurantLocalTime.getHours() * 60 + restaurantLocalTime.getMinutes();
               if (closePeriod.toLowerCase() === 'am' && closeTimeInMinutes <= 12 * 60) {
-                console.log(`Yesterday's overnight period detected. Current time (${currentTimeInMinutes}min) vs close time (${closeTimeInMinutes}min)`);
+                console.log(`Yesterday's overnight period detected. Restaurant time (${currentTimeInMinutes}min) vs close time (${closeTimeInMinutes}min)`);
                 if (currentTimeInMinutes <= closeTimeInMinutes) {
                   console.log(`*** STILL IN YESTERDAY'S OVERNIGHT PERIOD - Should show until ${closeHour}:${closeMin || '00'} ${closePeriod.toUpperCase()} ***`);
                 } else {
@@ -648,9 +694,6 @@ export async function POST(request: NextRequest) {
             }
           }
         }
-        console.log(`Final isOpen status: ${details.opening_hours?.open_now !== undefined ? isOpenNow : customOpenCheck}`);
-        console.log(`Using ${details.opening_hours?.open_now !== undefined ? 'Google' : 'Custom'} logic for open status`);
-        console.log('---');
 
         // Get photo URL if available
         let photoUrl = undefined;
@@ -710,8 +753,22 @@ Respond with just one sentence, no quotes or extra text.`;
           aiRecommendation = `A ${ratingText} restaurant with ${rating}/5 stars.`;
         }
 
-        // Get real-time status information including overnight period details
-        const realTimeStatus = getRealTimeStatus(details.opening_hours?.weekday_text, details.opening_hours?.open_now);
+        // Get real-time status information including overnight period details using restaurant's local time
+        const realTimeStatus = getRealTimeStatus(details.opening_hours?.weekday_text, details.opening_hours?.open_now, restaurantLocalTime);
+
+        console.log(`Timezone-aware status: ${realTimeStatus.isOpen}`);
+        console.log(`Final isOpen status: ${realTimeStatus.isOpen}`);
+        console.log(`Using timezone-aware logic for open status`);
+        
+        // Skip if our timezone-aware logic says it's closed
+        if (!realTimeStatus.isOpen) {
+          console.log(`❌ Skipping ${details.name} - timezone-aware logic says closed`);
+          console.log('---');
+          return null;
+        }
+        
+        console.log(`✅ ${details.name} - timezone-aware logic says OPEN, will include in results`);
+        console.log('---');
 
         const restaurant: Restaurant = {
           id: place.place_id!,
@@ -720,8 +777,10 @@ Respond with just one sentence, no quotes or extra text.`;
           address: details.formatted_address || 'Address not available',
           phone: details.formatted_phone_number,
           website: details.website,
-          googleMapsUrl: `https://www.google.com/maps/place/?q=place_id:${place.place_id}`,
-          isOpen: details.opening_hours?.open_now !== undefined ? isOpenNow : customOpenCheck, // Use Google's status if available, otherwise our logic
+          googleMapsUrl: details.geometry?.location 
+            ? `https://www.google.com/maps/search/?api=1&query=${details.geometry.location.lat},${details.geometry.location.lng}&query_place_id=${place.place_id}`
+            : `https://www.google.com/maps/place/?q=place_id:${place.place_id}`,
+          isOpen: realTimeStatus.isOpen, // Use timezone-aware status from realTimeStatus
           openingHours: details.opening_hours?.weekday_text,
           priceLevel: details.price_level,
           photoUrl,

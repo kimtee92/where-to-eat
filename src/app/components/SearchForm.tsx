@@ -226,28 +226,10 @@ const SearchForm: React.FC<SearchFormProps> = ({ onSearch, loading, onSortChange
           
           {/* Status indicators */}
           <div className="mt-1">
-            {!googleMapsLoaded && !loadingError && (
-              <small className="text-muted">
-                <i className="bi bi-hourglass-split me-1"></i>
-                Loading location services...
-              </small>
-            )}
-            {googleMapsLoaded && autocompleteReady && (
-              <small className="text-success">
-                <i className="bi bi-check-circle me-1"></i>
-                Location suggestions ready
-              </small>
-            )}
             {loadingError && (
               <small className="text-warning">
                 <i className="bi bi-exclamation-triangle me-1"></i>
                 Location suggestions unavailable
-              </small>
-            )}
-            {selectedLocationCoords && (
-              <small className="text-info">
-                <i className="bi bi-pin-map me-1"></i>
-                Specific location selected
               </small>
             )}
           </div>

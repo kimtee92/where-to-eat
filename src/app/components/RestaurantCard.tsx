@@ -56,6 +56,72 @@ export default function RestaurantCard({ restaurant, userLocation }: RestaurantC
     return { distance: distance.toFixed(1), walkingTime, drivingTime };
   };
 
+  const getDirectionsUrl = () => {
+    // Create a mobile-friendly directions URL
+    if (userLocation && restaurant.geometry) {
+      // Use directions API with user's current location as origin
+      return `https://www.google.com/maps/dir/${userLocation.lat},${userLocation.lng}/${restaurant.geometry.lat},${restaurant.geometry.lng}`;
+    } else if (restaurant.geometry) {
+      // Fallback to directions without origin (will prompt user for location)
+      return `https://www.google.com/maps/dir//${restaurant.geometry.lat},${restaurant.geometry.lng}`;
+    } else {
+      // Fallback to search by name and address
+      const query = encodeURIComponent(`${restaurant.name} ${restaurant.address}`);
+      return `https://www.google.com/maps/search/${query}`;
+    }
+  };
+
+  const handleDirectionsClick = (e: React.MouseEvent) => {
+    e.preventDefault();
+    
+    const directionsUrl = getDirectionsUrl();
+    
+    // Try to detect if we're on mobile and use app-specific URLs
+    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    
+    if (isMobile && restaurant.geometry) {
+      // Try to open in native apps first
+      const coords = `${restaurant.geometry.lat},${restaurant.geometry.lng}`;
+      const query = encodeURIComponent(restaurant.name);
+      
+      // iOS: Try to open in Apple Maps, fallback to Google Maps
+      if (/iPad|iPhone|iPod/.test(navigator.userAgent)) {
+        const appleMapsUrl = userLocation 
+          ? `maps://maps.apple.com/?daddr=${coords}&saddr=${userLocation.lat},${userLocation.lng}`
+          : `maps://maps.apple.com/?daddr=${coords}`;
+        
+        // Try Apple Maps first, fallback to Google Maps
+        window.location.href = appleMapsUrl;
+        
+        // Fallback to Google Maps if Apple Maps fails
+        setTimeout(() => {
+          window.open(directionsUrl, '_blank');
+        }, 500);
+        
+        return;
+      }
+      
+      // Android: Try Google Maps app intent
+      if (/Android/i.test(navigator.userAgent)) {
+        const androidIntent = userLocation
+          ? `intent://maps.google.com/maps?daddr=${coords}&saddr=${userLocation.lat},${userLocation.lng}#Intent;scheme=https;package=com.google.android.apps.maps;end`
+          : `intent://maps.google.com/maps?daddr=${coords}#Intent;scheme=https;package=com.google.android.apps.maps;end`;
+        
+        window.location.href = androidIntent;
+        
+        // Fallback to web if app intent fails
+        setTimeout(() => {
+          window.open(directionsUrl, '_blank');
+        }, 500);
+        
+        return;
+      }
+    }
+    
+    // Default: open in web browser
+    window.open(directionsUrl, '_blank');
+  };
+
   const getCurrentDayHours = () => {
     if (!restaurant.openingHours || restaurant.openingHours.length === 0) return null;
     
@@ -244,15 +310,14 @@ export default function RestaurantCard({ restaurant, userLocation }: RestaurantC
         {/* Action Buttons */}
         <div className="row g-2">
           <div className="col-6">
-            <a
-              href={restaurant.googleMapsUrl}
-              target="_blank"
-              rel="noopener noreferrer"
+            <button
+              onClick={handleDirectionsClick}
               className="btn btn-flame-scarlet w-100 py-3 fw-bold rounded-3 d-flex align-items-center justify-content-center"
+              type="button"
             >
               <i className="bi bi-navigation-fill me-2"></i>
               Directions
-            </a>
+            </button>
           </div>
           
           <div className="col-3">
