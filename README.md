@@ -141,17 +141,13 @@ src/app/
 
 ## 🔧 Customization
 
-### Adding New Cuisine Types
-Edit the `cuisineOptions` array in `src/app/components/SearchForm.tsx`:
-
-```typescript
-const cuisineOptions = [
-  'Any', 'Italian', 'Chinese', 'Japanese', 'Thai', 'Indian', 
-  'Mexican', 'French', 'American', 'Mediterranean',
-  // Add new cuisines here
-  'Your New Cuisine',
-];
-```
+### Search Preferences
+The app uses a freetext approach where users can describe exactly what they want:
+- **Cuisine types**: "Italian", "Thai", "fusion", "authentic Mexican", etc.
+- **Dietary needs**: "vegetarian", "vegan", "gluten-free", "halal", etc.
+- **Occasions**: "date night", "family dinner", "business lunch", "quick bite"
+- **Price range**: "budget-friendly", "fine dining", "mid-range"
+- **Atmosphere**: "casual", "romantic", "family-friendly", "trendy"
 
 ### Styling
 The app uses custom CSS in `src/app/globals.css` with Bootstrap 5. Modify styles directly or extend the existing utility classes.
