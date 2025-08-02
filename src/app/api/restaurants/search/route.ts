@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
 import { Client } from '@googlemaps/google-maps-services-js';
+import dbConnect from '@/lib/mongodb';
+import SearchHistory from '@/models/SearchHistory';
+import PopularKeyword from '@/models/PopularKeyword';
 
 // Initialize clients
 const anthropic = new Anthropic({
@@ -8,6 +11,138 @@ const anthropic = new Anthropic({
 });
 
 const googleMapsClient = new Client({});
+
+// Helper function to extract and update keywords in database
+async function updateKeywords(preferences: string) {
+  if (!preferences) return;
+
+  try {
+    await dbConnect();
+
+    const lowerPrefs = preferences.toLowerCase();
+    
+    // Enhanced cuisine detection
+    const cuisineKeywords = {
+      'italian': ['italian', 'pizza', 'pasta', 'spaghetti', 'lasagna', 'risotto'],
+      'chinese': ['chinese', 'dim sum', 'dumplings', 'noodles', 'stir fry', 'fried rice'],
+      'japanese': ['japanese', 'sushi', 'ramen', 'tempura', 'teriyaki', 'bento'],
+      'thai': ['thai', 'pad thai', 'curry', 'tom yum', 'green curry', 'red curry'],
+      'indian': ['indian', 'curry', 'biryani', 'tandoori', 'naan', 'masala'],
+      'mexican': ['mexican', 'tacos', 'burritos', 'quesadilla', 'enchiladas', 'nachos'],
+      'french': ['french', 'croissant', 'baguette', 'crepe', 'bistro', 'boeuf'],
+      'american': ['american', 'burger', 'bbq', 'steak', 'ribs', 'wings'],
+      'mediterranean': ['mediterranean', 'greek', 'hummus', 'falafel', 'gyros', 'kebab'],
+      'korean': ['korean', 'kimchi', 'bulgogi', 'bibimbap', 'kbbq', 'korean bbq'],
+      'vietnamese': ['vietnamese', 'pho', 'banh mi', 'spring rolls', 'bun bo hue'],
+      'spanish': ['spanish', 'paella', 'tapas', 'sangria', 'churros'],
+      'middle eastern': ['middle eastern', 'shawarma', 'kabab', 'lebanese', 'turkish']
+    };
+    
+    const styleKeywords = {
+      'fast food': ['fast food', 'quick', 'drive through', 'takeaway', 'grab and go'],
+      'fine dining': ['fine dining', 'upscale', 'fancy', 'elegant', 'romantic', 'date night'],
+      'casual dining': ['casual', 'family', 'relaxed', 'comfortable'],
+      'cafe': ['cafe', 'coffee', 'breakfast', 'brunch', 'pastries'],
+      'bar': ['bar', 'drinks', 'cocktails', 'beer', 'wine', 'happy hour'],
+      'buffet': ['buffet', 'all you can eat', 'unlimited'],
+      'food truck': ['food truck', 'street food', 'mobile']
+    };
+    
+    const dietaryKeywords = ['vegetarian', 'vegan', 'gluten free', 'halal', 'kosher', 'keto', 'paleo'];
+
+    // Update cuisine keywords
+    for (const [cuisine, keywords] of Object.entries(cuisineKeywords)) {
+      if (keywords.some(keyword => lowerPrefs.includes(keyword))) {
+        await PopularKeyword.findOneAndUpdate(
+          { keyword: cuisine },
+          { 
+            $inc: { count: 1 },
+            $set: { lastUsed: new Date(), category: 'cuisine' }
+          },
+          { upsert: true }
+        );
+      }
+    }
+
+    // Update style keywords
+    for (const [style, keywords] of Object.entries(styleKeywords)) {
+      if (keywords.some(keyword => lowerPrefs.includes(keyword))) {
+        await PopularKeyword.findOneAndUpdate(
+          { keyword: style },
+          { 
+            $inc: { count: 1 },
+            $set: { lastUsed: new Date(), category: 'style' }
+          },
+          { upsert: true }
+        );
+      }
+    }
+
+    // Update dietary keywords
+    for (const keyword of dietaryKeywords) {
+      if (lowerPrefs.includes(keyword)) {
+        await PopularKeyword.findOneAndUpdate(
+          { keyword },
+          { 
+            $inc: { count: 1 },
+            $set: { lastUsed: new Date(), category: 'dietary' }
+          },
+          { upsert: true }
+        );
+      }
+    }
+
+    // Extract other potential keywords (words longer than 3 characters)
+    const words = preferences.split(/\s+/).filter(word => 
+      word.length > 3 && !['restaurant', 'food', 'place'].includes(word.toLowerCase())
+    );
+
+    for (const word of words.slice(0, 3)) { // Limit to 3 additional keywords
+      const cleanWord = word.toLowerCase().replace(/[^\w]/g, '');
+      if (cleanWord.length > 3) {
+        await PopularKeyword.findOneAndUpdate(
+          { keyword: cleanWord },
+          { 
+            $inc: { count: 1 },
+            $set: { lastUsed: new Date(), category: 'general' }
+          },
+          { upsert: true }
+        );
+      }
+    }
+  } catch (error) {
+    // Silent fail for background keyword updates
+  }
+}
+
+// Helper function to save search history
+async function saveSearchHistory(
+  location: string,
+  preferences: string,
+  searchQuery: string,
+  resultsCount: number,
+  userCoords?: { lat: number; lng: number },
+  request?: NextRequest
+) {
+  try {
+    await dbConnect();
+
+    const searchData = {
+      location,
+      preferences,
+      coordinates: userCoords,
+      searchQuery,
+      resultsCount,
+      userAgent: request?.headers.get('user-agent') || undefined,
+      // Note: In production, you might want to get real IP, but for demo we'll skip it
+      // ipAddress: request?.headers.get('x-forwarded-for') || request?.headers.get('x-real-ip') || undefined,
+    };
+
+    await SearchHistory.create(searchData);
+  } catch (error) {
+    // Silent fail for background search history save
+  }
+}
 
 // Helper function to calculate distance between two coordinates (Haversine formula)
 function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
@@ -48,7 +183,7 @@ async function getLocationTime(lat: number, lng: number): Promise<Date> {
       return localTime;
     }
   } catch (error) {
-    console.error('Error getting timezone:', error);
+    // Fallback to current time if timezone API fails
   }
   
   // Fallback to current time if timezone API fails
@@ -614,6 +749,55 @@ export async function POST(request: NextRequest) {
           return null;
         }
 
+        // Don't filter by Google's open_now here - let our timezone-aware logic decide
+        // Google's open_now might use different timezone calculations
+
+        // Skip if no opening hours data or temporarily closed
+        if (!details.opening_hours?.weekday_text || details.business_status === 'CLOSED_TEMPORARILY') {
+          return null;
+        }
+        if (details.opening_hours?.weekday_text) {
+          const currentDay = restaurantLocalTime.getDay();
+          const dayNames = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+          const googleDayIndex = currentDay === 0 ? 6 : currentDay - 1;
+          const todayName = dayNames[googleDayIndex];
+          const yesterdayDayIndex = currentDay === 0 ? 5 : (currentDay === 1 ? 6 : currentDay - 2);
+          const yesterdayName = dayNames[yesterdayDayIndex];
+          
+          const todaysHoursEntry = details.opening_hours.weekday_text.find(h => h.toLowerCase().includes(todayName));
+          const yesterdaysHoursEntry = details.opening_hours.weekday_text.find(h => h.toLowerCase().includes(yesterdayName));
+          
+          // Parse and show the times we're working with
+          if (todaysHoursEntry && !todaysHoursEntry.toLowerCase().includes('closed')) {
+            const timeMatch = todaysHoursEntry.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)\s*[–\-—]\s*(\d{1,2})(?::(\d{2}))?\s*(am|pm)/i);
+          }
+          
+          if (yesterdaysHoursEntry && !yesterdaysHoursEntry.toLowerCase().includes('closed')) {
+            const timeMatch = yesterdaysHoursEntry.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)\s*[–\-—]\s*(\d{1,2})(?::(\d{2}))?\s*(am|pm)/i);
+            if (timeMatch) {
+              const [, openHour, openMin, openPeriod, closeHour, closeMin, closePeriod] = timeMatch;
+              
+              // Check if we're in yesterday's overnight period using restaurant's local time
+              let closeTimeInMinutes = parseInt(closeHour) * 60 + parseInt(closeMin || '0');
+              if (closePeriod.toLowerCase() === 'pm' && parseInt(closeHour) !== 12) {
+                closeTimeInMinutes += 12 * 60;
+              }
+              if (closePeriod.toLowerCase() === 'am' && parseInt(closeHour) === 12) {
+                closeTimeInMinutes = parseInt(closeMin || '0');
+              }
+              
+              const currentTimeInMinutes = restaurantLocalTime.getHours() * 60 + restaurantLocalTime.getMinutes();
+              if (closePeriod.toLowerCase() === 'am' && closeTimeInMinutes <= 12 * 60) {
+                if (currentTimeInMinutes <= closeTimeInMinutes) {
+                  // Still in yesterday's overnight period
+                } else {
+                  // Yesterday's overnight period ended
+                }
+              }
+            }
+          }
+        }
+
         // Get photo URL if available
         let photoUrl = undefined;
         if (details.photos && details.photos.length > 0) {
@@ -880,6 +1064,14 @@ Important: Only return valid JSON, no additional text.
         return b.rating - a.rating;
       });
     }
+
+    // Save search history and update keywords in the background
+    Promise.all([
+      saveSearchHistory(searchLocation, preferences, searchQuery, rankedRestaurants.length, userCoords, request),
+      updateKeywords(preferences)
+    ]).catch(() => {
+      // Silent fail for background analytics
+    });
 
     return NextResponse.json({
       restaurants: rankedRestaurants,
