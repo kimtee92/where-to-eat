@@ -16,7 +16,7 @@ A modern web application that helps users find the best restaurants based on the
 
 ## 🎯 Features
 
-- 🍽️ **Smart Restaurant Search**: Find restaurants by location and cuisine type
+- 🍽️ **Smart Restaurant Search**: Find Places to Eat by location and cuisine type
 - 🤖 **AI-Powered Recommendations**: Claude AI analyzes and ranks restaurants
 - 🗺️ **Google Maps Integration**: Get directions and location details
 - ⭐ **Real-time Information**: Current ratings, hours, and availability
@@ -65,7 +65,7 @@ A modern web application that helps users find the best restaurants based on the
 
 1. **Enter a location** (e.g., "Melbourne CBD", "Sydney", "New York")
 2. **Specify your preferences** (cuisine, dietary restrictions, occasion)
-3. **Click "Find Great Restaurants"** to get AI-powered recommendations
+3. **Click "Find Places to Eat"** to get AI-powered recommendations
 4. **Browse results** with ratings, hours, contact info, and AI insights
 5. **Click "Directions"** to open Google Maps
 6. **Use phone/website buttons** to contact restaurants directly

@@ -28,8 +28,9 @@ function isRestaurantOpen(openingHours?: string[]): boolean {
     return false;
   }
 
-  // Extract time range (e.g., "Monday: 9:00 AM – 9:00 PM")
-  const timeMatch = todayHours.match(/(\d{1,2}):(\d{2})\s*(AM|PM)\s*[–-]\s*(\d{1,2}):(\d{2})\s*(AM|PM)/i);
+  // Extract time range - handle various formats
+  // Match patterns like "Monday: 9:00 AM – 9:00 PM" or "Monday: 9:00 AM - 9:00 PM"
+  const timeMatch = todayHours.match(/(\d{1,2}):(\d{2})\s*(AM|PM)\s*[–\-—]\s*(\d{1,2}):(\d{2})\s*(AM|PM)/i);
   
   if (!timeMatch) {
     return true; // Assume open if can't parse hours
@@ -303,8 +304,6 @@ export async function POST(request: NextRequest) {
       ...restaurant,
       isOpen: isRestaurantOpen(restaurant.openingHours)
     })).filter(restaurant => restaurant.isOpen);
-
-    console.log(`Filtered to ${openRestaurants.length} open restaurants out of ${filteredRestaurants.length} total`);
 
     // Sort by rating (highest first) since all are already open
     const sortedRestaurants = openRestaurants.sort((a, b) => {

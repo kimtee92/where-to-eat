@@ -314,7 +314,7 @@ const SearchForm: React.FC<SearchFormProps> = ({ onSearch, loading, onSortChange
 
         {/* Open Now Filter Info */}
         <div className="col-12">
-          <div className="alert alert-info py-2 mb-0" role="alert">
+          <div className="alert alert-info py-2 mb-0 dark:bg-blue-900 dark:border-blue-700 dark:text-blue-100" role="alert">
             <i className="bi bi-clock me-2"></i>
             <small>
               <strong>Showing only restaurants that are currently open</strong> based on their posted hours.
@@ -339,7 +339,7 @@ const SearchForm: React.FC<SearchFormProps> = ({ onSearch, loading, onSortChange
             ) : (
               <>
                 <i className="bi bi-search me-2"></i>
-                Find Restaurants
+                Find Places to Eat
               </>
             )}
           </button>
