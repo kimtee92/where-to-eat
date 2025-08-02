@@ -19,6 +19,16 @@ interface Restaurant {
     lng: number;
   };
   aiRecommendation?: string;
+  realTimeStatus?: {
+    isOpen: boolean;
+    currentPeriod?: {
+      day: string;
+      hours: string;
+      isOvernightPeriod: boolean;
+      closesAt?: string;
+    };
+    message?: string;
+  };
 }
 
 interface RestaurantCardProps {
@@ -114,9 +124,9 @@ export default function RestaurantCard({ restaurant, userLocation }: RestaurantC
         
         {/* Status Badge */}
         <div className="position-absolute top-0 end-0 m-3">
-          <span className={`badge ${restaurant.isOpen ? 'status-badge-open' : 'status-badge-closed'} px-3 py-2 rounded-pill`}>
+          <span className={`badge ${restaurant.realTimeStatus?.isOpen ? 'status-badge-open' : 'status-badge-closed'} px-3 py-2 rounded-pill`}>
             <i className={`bi bi-circle-fill me-1`}></i>
-            {restaurant.isOpen ? 'OPEN' : 'CLOSED'}
+            {restaurant.realTimeStatus?.isOpen ? 'OPEN' : 'CLOSED'}
           </span>
         </div>
 
@@ -203,11 +213,29 @@ export default function RestaurantCard({ restaurant, userLocation }: RestaurantC
             </div>
           </div>
           
-          {currentDayHours && (
-            <div className="bg-fresh-green bg-opacity-10 rounded-3 p-3">
+          {restaurant.realTimeStatus && (
+            <div className={`rounded-3 p-3 ${restaurant.realTimeStatus.isOpen ? 'bg-fresh-green bg-opacity-10' : 'bg-warning bg-opacity-10'}`}>
               <div className="d-flex align-items-center">
-                <i className="bi bi-clock-fill text-charcoal-gray me-2"></i>
-                <span className="text-charcoal-gray fw-bold">Today: {currentDayHours}</span>
+                <i className={`bi ${restaurant.realTimeStatus.isOpen ? 'bi-clock-fill' : 'bi-clock'} text-charcoal-gray me-2`}></i>
+                <div className="flex-grow-1">
+                  <span className="text-charcoal-gray fw-bold d-block">
+                    {restaurant.realTimeStatus.message}
+                  </span>
+                  {restaurant.realTimeStatus.currentPeriod && (
+                    <small className="text-charcoal-gray opacity-75">
+                      {restaurant.realTimeStatus.currentPeriod.isOvernightPeriod ? (
+                        <>
+                          <i className="bi bi-moon-fill me-1"></i>
+                          {restaurant.realTimeStatus.currentPeriod.day}: {restaurant.realTimeStatus.currentPeriod.hours}
+                        </>
+                      ) : (
+                        <>
+                          {restaurant.realTimeStatus.currentPeriod.day}: {restaurant.realTimeStatus.currentPeriod.hours}
+                        </>
+                      )}
+                    </small>
+                  )}
+                </div>
               </div>
             </div>
           )}

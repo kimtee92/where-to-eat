@@ -23,6 +23,115 @@ function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
   return distance;
 }
 
+// Helper function to check if a restaurant is currently open (fallback for when Google doesn't provide open_now)
+function isRestaurantOpen(openingHours?: string[]): boolean {
+  if (!openingHours || openingHours.length === 0) {
+    return false; // Assume closed if no hours provided (likely temporarily closed)
+  }
+
+  const now = new Date();
+  const currentDay = now.getDay(); // 0 = Sunday, 1 = Monday, etc.
+  const currentHour = now.getHours();
+  const currentMinute = now.getMinutes();
+  const currentTimeInMinutes = currentHour * 60 + currentMinute;
+
+  // Google's weekday_text format: ["Monday: 9:00 AM – 9:00 PM", "Tuesday: 9:00 AM – 9:00 PM", ...]
+  // Days are in order: Monday, Tuesday, Wednesday, Thursday, Friday, Saturday, Sunday
+  const dayNames = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+  
+  // Helper function to parse time string and check if current time falls within range
+  function checkTimeRange(hoursString: string): boolean {
+    if (hoursString.toLowerCase().includes('closed')) {
+      return false;
+    }
+
+    // Extract time range - handle various formats including "5 pm–4 am" and "8:30 am–5 pm"
+    const timeMatch = hoursString.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)\s*[–\-—]\s*(\d{1,2})(?::(\d{2}))?\s*(am|pm)/i);
+    
+    if (!timeMatch) {
+      return false; // Assume closed if can't parse hours (was returning true)
+    }
+
+    const [, openHour, openMin, openPeriod, closeHour, closeMin, closePeriod] = timeMatch;
+    
+    // Convert to minutes since midnight
+    let openTimeInMinutes = parseInt(openHour) * 60 + parseInt(openMin || '0');
+    let closeTimeInMinutes = parseInt(closeHour) * 60 + parseInt(closeMin || '0');
+    
+    // Handle AM/PM conversion
+    if (openPeriod.toLowerCase() === 'pm' && parseInt(openHour) !== 12) {
+      openTimeInMinutes += 12 * 60; // Add 12 hours for PM (except 12 PM)
+    }
+    if (openPeriod.toLowerCase() === 'am' && parseInt(openHour) === 12) {
+      openTimeInMinutes = parseInt(openMin || '0'); // 12 AM = 00:xx
+    }
+    
+    if (closePeriod.toLowerCase() === 'pm' && parseInt(closeHour) !== 12) {
+      closeTimeInMinutes += 12 * 60; // Add 12 hours for PM (except 12 PM)
+    }
+    if (closePeriod.toLowerCase() === 'am' && parseInt(closeHour) === 12) {
+      closeTimeInMinutes = parseInt(closeMin || '0'); // 12 AM = 00:xx
+    }
+
+    // Handle overnight hours (e.g., 5 PM - 4 AM)
+    if (closeTimeInMinutes < openTimeInMinutes) {
+      // Overnight: open if current time is after opening OR before closing
+      return currentTimeInMinutes >= openTimeInMinutes || currentTimeInMinutes <= closeTimeInMinutes;
+    }
+    
+    // Same day: open if current time is between opening and closing
+    return currentTimeInMinutes >= openTimeInMinutes && currentTimeInMinutes <= closeTimeInMinutes;
+  }
+
+  // Check if we might be in an overnight period from yesterday FIRST
+  // For example, if it's Sunday 12 AM and Saturday was "11 am–3 am"
+  const yesterdayDayIndex = currentDay === 0 ? 5 : (currentDay === 1 ? 6 : currentDay - 2);
+  const yesterdayName = dayNames[yesterdayDayIndex];
+  
+  const yesterdayHours = openingHours.find(hours => 
+    hours.toLowerCase().includes(yesterdayName)
+  );
+
+  if (yesterdayHours && !yesterdayHours.toLowerCase().includes('closed')) {
+    // Extract time range from yesterday
+    const timeMatch = yesterdayHours.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)\s*[–\-—]\s*(\d{1,2})(?::(\d{2}))?\s*(am|pm)/i);
+    
+    if (timeMatch) {
+      const [, , , , closeHour, closeMin, closePeriod] = timeMatch;
+      
+      let closeTimeInMinutes = parseInt(closeHour) * 60 + parseInt(closeMin || '0');
+      
+      if (closePeriod.toLowerCase() === 'pm' && parseInt(closeHour) !== 12) {
+        closeTimeInMinutes += 12 * 60;
+      }
+      if (closePeriod.toLowerCase() === 'am' && parseInt(closeHour) === 12) {
+        closeTimeInMinutes = parseInt(closeMin || '0');
+      }
+
+      // If yesterday's closing time is in early AM (indicating overnight), check if we're still in that period
+      if (closePeriod.toLowerCase() === 'am' && closeTimeInMinutes <= 12 * 60) { // Closing before noon = overnight
+        if (currentTimeInMinutes <= closeTimeInMinutes) {
+          return true; // Still in yesterday's overnight period
+        }
+      }
+    }
+  }
+
+  // Only check today's hours if we're NOT in yesterday's overnight period
+  const googleDayIndex = currentDay === 0 ? 6 : currentDay - 1; // Convert JS day (0=Sunday) to Google format (0=Monday)
+  const todayName = dayNames[googleDayIndex];
+  
+  const todayHours = openingHours.find(hours => 
+    hours.toLowerCase().includes(todayName)
+  );
+
+  if (todayHours && checkTimeRange(todayHours)) {
+    return true;
+  }
+
+  return false;
+}
+
 // Helper function to check if restaurant's opening time has already passed today
 function hasOpeningTimePassed(openingHours?: string[]): boolean {
   if (!openingHours || openingHours.length === 0) return false;
@@ -56,6 +165,198 @@ function hasOpeningTimePassed(openingHours?: string[]): boolean {
   return false;
 }
 
+// Helper function to get real-time status information including overnight period details
+function getRealTimeStatus(openingHours?: string[], googleOpenNow?: boolean): {
+  isOpen: boolean;
+  currentPeriod?: {
+    day: string;
+    hours: string;
+    isOvernightPeriod: boolean;
+    closesAt?: string;
+  };
+  message?: string;
+} {
+  if (!openingHours || openingHours.length === 0) {
+    return {
+      isOpen: false,
+      message: 'Hours not available'
+    };
+  }
+
+  const now = new Date();
+  const currentDay = now.getDay(); // 0 = Sunday, 1 = Monday, etc.
+  const currentHour = now.getHours();
+  const currentMinute = now.getMinutes();
+  const currentTimeInMinutes = currentHour * 60 + currentMinute;
+
+  const dayNames = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+  const dayDisplayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+  
+  // Check if we might be in an overnight period from yesterday FIRST
+  const yesterdayDayIndex = currentDay === 0 ? 5 : (currentDay === 1 ? 6 : currentDay - 2);
+  const yesterdayName = dayNames[yesterdayDayIndex];
+  const yesterdayDisplayName = dayDisplayNames[yesterdayDayIndex];
+  
+  const yesterdayHours = openingHours.find(hours => 
+    hours.toLowerCase().includes(yesterdayName)
+  );
+
+  if (yesterdayHours && !yesterdayHours.toLowerCase().includes('closed')) {
+    // Extract time range from yesterday
+    const timeMatch = yesterdayHours.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)\s*[–\-—]\s*(\d{1,2})(?::(\d{2}))?\s*(am|pm)/i);
+    
+    if (timeMatch) {
+      const [, openHour, openMin, openPeriod, closeHour, closeMin, closePeriod] = timeMatch;
+      
+      let closeTimeInMinutes = parseInt(closeHour) * 60 + parseInt(closeMin || '0');
+      
+      if (closePeriod.toLowerCase() === 'pm' && parseInt(closeHour) !== 12) {
+        closeTimeInMinutes += 12 * 60;
+      }
+      if (closePeriod.toLowerCase() === 'am' && parseInt(closeHour) === 12) {
+        closeTimeInMinutes = parseInt(closeMin || '0');
+      }
+
+      // If yesterday's closing time is in early AM (indicating overnight), check if we're still in that period
+      if (closePeriod.toLowerCase() === 'am' && closeTimeInMinutes <= 12 * 60) { // Closing before noon = overnight
+        if (currentTimeInMinutes <= closeTimeInMinutes) {
+          const closeTime12hr = `${closeHour}:${(closeMin || '00').padStart(2, '0')} ${closePeriod.toUpperCase()}`;
+          
+          return {
+            isOpen: true,
+            currentPeriod: {
+              day: yesterdayDisplayName,
+              hours: yesterdayHours.split(': ')[1] || yesterdayHours,
+              isOvernightPeriod: true,
+              closesAt: closeTime12hr
+            },
+            message: `Open until ${closeTime12hr} (${yesterdayDisplayName}'s overnight hours)`
+          };
+        }
+      }
+    }
+  }
+
+  // Check today's hours if not in yesterday's overnight period
+  const googleDayIndex = currentDay === 0 ? 6 : currentDay - 1; // Convert JS day (0=Sunday) to Google format (0=Monday)
+  const todayName = dayNames[googleDayIndex];
+  const todayDisplayName = dayDisplayNames[googleDayIndex];
+  
+  const todayHours = openingHours.find(hours => 
+    hours.toLowerCase().includes(todayName)
+  );
+
+  if (todayHours) {
+    if (todayHours.toLowerCase().includes('closed')) {
+      return {
+        isOpen: false,
+        currentPeriod: {
+          day: todayDisplayName,
+          hours: 'Closed',
+          isOvernightPeriod: false
+        },
+        message: `Closed today (${todayDisplayName})`
+      };
+    }
+
+    // Extract time range
+    const timeMatch = todayHours.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)\s*[–\-—]\s*(\d{1,2})(?::(\d{2}))?\s*(am|pm)/i);
+    
+    if (timeMatch) {
+      const [, openHour, openMin, openPeriod, closeHour, closeMin, closePeriod] = timeMatch;
+      
+      // Convert to minutes since midnight
+      let openTimeInMinutes = parseInt(openHour) * 60 + parseInt(openMin || '0');
+      let closeTimeInMinutes = parseInt(closeHour) * 60 + parseInt(closeMin || '0');
+      
+      // Handle AM/PM conversion
+      if (openPeriod.toLowerCase() === 'pm' && parseInt(openHour) !== 12) {
+        openTimeInMinutes += 12 * 60;
+      }
+      if (openPeriod.toLowerCase() === 'am' && parseInt(openHour) === 12) {
+        openTimeInMinutes = parseInt(openMin || '0');
+      }
+      
+      if (closePeriod.toLowerCase() === 'pm' && parseInt(closeHour) !== 12) {
+        closeTimeInMinutes += 12 * 60;
+      }
+      if (closePeriod.toLowerCase() === 'am' && parseInt(closeHour) === 12) {
+        closeTimeInMinutes = parseInt(closeMin || '0');
+      }
+
+      const openTime12hr = `${openHour}:${(openMin || '00').padStart(2, '0')} ${openPeriod.toUpperCase()}`;
+      const closeTime12hr = `${closeHour}:${(closeMin || '00').padStart(2, '0')} ${closePeriod.toUpperCase()}`;
+
+      // Handle overnight hours (e.g., 5 PM - 4 AM)
+      if (closeTimeInMinutes < openTimeInMinutes) {
+        const isCurrentlyOpen = currentTimeInMinutes >= openTimeInMinutes || currentTimeInMinutes <= closeTimeInMinutes;
+        
+        if (isCurrentlyOpen) {
+          if (currentTimeInMinutes >= openTimeInMinutes) {
+            // We're in the opening day part of the overnight period
+            return {
+              isOpen: true,
+              currentPeriod: {
+                day: todayDisplayName,
+                hours: todayHours.split(': ')[1] || todayHours,
+                isOvernightPeriod: true,
+                closesAt: closeTime12hr
+              },
+              message: `Open until ${closeTime12hr} tomorrow (overnight hours)`
+            };
+          } else {
+            // We're in the next day part of the overnight period
+            return {
+              isOpen: true,
+              currentPeriod: {
+                day: todayDisplayName,
+                hours: todayHours.split(': ')[1] || todayHours,
+                isOvernightPeriod: true,
+                closesAt: closeTime12hr
+              },
+              message: `Open until ${closeTime12hr} (${todayDisplayName}'s overnight hours)`
+            };
+          }
+        } else {
+          return {
+            isOpen: false,
+            currentPeriod: {
+              day: todayDisplayName,
+              hours: todayHours.split(': ')[1] || todayHours,
+              isOvernightPeriod: true
+            },
+            message: `Closed - Opens at ${openTime12hr}`
+          };
+        }
+      } else {
+        // Same day hours
+        const isCurrentlyOpen = currentTimeInMinutes >= openTimeInMinutes && currentTimeInMinutes <= closeTimeInMinutes;
+        
+        return {
+          isOpen: isCurrentlyOpen,
+          currentPeriod: {
+            day: todayDisplayName,
+            hours: todayHours.split(': ')[1] || todayHours,
+            isOvernightPeriod: false,
+            closesAt: isCurrentlyOpen ? closeTime12hr : undefined
+          },
+          message: isCurrentlyOpen 
+            ? `Open until ${closeTime12hr}` 
+            : currentTimeInMinutes < openTimeInMinutes 
+              ? `Closed - Opens at ${openTime12hr}` 
+              : `Closed - Opens ${openTime12hr} tomorrow`
+        };
+      }
+    }
+  }
+
+  // Fallback to Google's status if we can't parse hours
+  return {
+    isOpen: googleOpenNow || false,
+    message: googleOpenNow ? 'Currently open' : 'Currently closed'
+  };
+}
+
 interface Restaurant {
   id: string;
   name: string;
@@ -75,6 +376,16 @@ interface Restaurant {
     lng: number;
   };
   aiRecommendation?: string;
+  realTimeStatus?: {
+    isOpen: boolean;
+    currentPeriod?: {
+      day: string;
+      hours: string;
+      isOvernightPeriod: boolean;
+      closesAt?: string;
+    };
+    message?: string;
+  };
 }
 
 export async function POST(request: NextRequest) {
@@ -105,7 +416,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Step 1: Use Google Places to find restaurants
+    // Step 1: Use Google Places to Find Places to Eat
     // Enhanced keyword extraction from preferences
     let searchQuery = `restaurants in ${location}`;
     let searchType = 'restaurant'; // Default type
@@ -246,12 +557,100 @@ export async function POST(request: NextRequest) {
           params: {
             place_id: place.place_id!,
             key: process.env.GOOGLE_PLACES_API_KEY!,
-            fields: ['name', 'formatted_address', 'formatted_phone_number', 'website', 'rating', 'opening_hours', 'price_level', 'photos', 'geometry', 'reviews'] as any,
+            fields: ['name', 'formatted_address', 'formatted_phone_number', 'website', 'rating', 'opening_hours', 'price_level', 'photos', 'geometry', 'reviews', 'business_status'] as any,
           },
         });
 
         const details = detailsResponse.data.result;
         const isOpenNow = details.opening_hours?.open_now ?? false;
+        
+        // Also check with our custom logic for comparison
+        const customOpenCheck = isRestaurantOpen(details.opening_hours?.weekday_text);
+
+        // Skip places with no opening hours data or temporarily closed status
+        if (!details.opening_hours?.weekday_text || details.business_status === 'CLOSED_TEMPORARILY') {
+          console.log(`Skipping ${details.name} - no hours data or temporarily closed (status: ${details.business_status})`);
+          return null;
+        }
+
+        // Skip if Google explicitly says it's closed or has no hours
+        if (details.opening_hours?.open_now !== true) {
+          console.log(`Skipping ${details.name} - Google says closed or unknown status`);
+          return null;
+        }
+
+        // Debug logging to check what Google is returning vs our logic
+        console.log(`Restaurant: ${details.name}`);
+        console.log(`Google open_now: ${details.opening_hours?.open_now}`);
+        console.log(`Business status: ${details.business_status || 'Not specified'}`);
+        console.log(`Has opening hours: ${!!details.opening_hours?.weekday_text}`);
+        console.log(`Our custom logic: ${customOpenCheck}`);
+        
+        // Early filtering debug
+        if (!details.opening_hours?.weekday_text) {
+          console.log(`❌ Will skip - No opening hours data available`);
+        } else if (details.business_status === 'CLOSED_TEMPORARILY') {
+          console.log(`❌ Will skip - Business temporarily closed`);
+        } else if (details.opening_hours?.open_now !== true) {
+          console.log(`❌ Will skip - Google says currently closed or unknown`);
+        } else {
+          console.log(`✅ Will process - Passes initial filters`);
+        }
+        if (details.opening_hours?.weekday_text) {
+          const now = new Date();
+          const currentDay = now.getDay();
+          const dayNames = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+          const googleDayIndex = currentDay === 0 ? 6 : currentDay - 1;
+          const todayName = dayNames[googleDayIndex];
+          const yesterdayDayIndex = currentDay === 0 ? 5 : (currentDay === 1 ? 6 : currentDay - 2);
+          const yesterdayName = dayNames[yesterdayDayIndex];
+          
+          const todaysHoursEntry = details.opening_hours.weekday_text.find(h => h.toLowerCase().includes(todayName));
+          const yesterdaysHoursEntry = details.opening_hours.weekday_text.find(h => h.toLowerCase().includes(yesterdayName));
+          
+          console.log(`Today is: ${['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][currentDay]} (${now.getHours()}:${now.getMinutes().toString().padStart(2, '0')})`);
+          console.log(`Today's hours: ${todaysHoursEntry || 'Not found'}`);
+          console.log(`Yesterday's hours: ${yesterdaysHoursEntry || 'Not found'}`);
+          
+          // Parse and show the times we're working with
+          if (todaysHoursEntry && !todaysHoursEntry.toLowerCase().includes('closed')) {
+            const timeMatch = todaysHoursEntry.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)\s*[–\-—]\s*(\d{1,2})(?::(\d{2}))?\s*(am|pm)/i);
+            if (timeMatch) {
+              const [, openHour, openMin, openPeriod, closeHour, closeMin, closePeriod] = timeMatch;
+              console.log(`Parsed today: ${openHour}:${openMin || '00'} ${openPeriod} - ${closeHour}:${closeMin || '00'} ${closePeriod}`);
+            }
+          }
+          
+          if (yesterdaysHoursEntry && !yesterdaysHoursEntry.toLowerCase().includes('closed')) {
+            const timeMatch = yesterdaysHoursEntry.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)\s*[–\-—]\s*(\d{1,2})(?::(\d{2}))?\s*(am|pm)/i);
+            if (timeMatch) {
+              const [, openHour, openMin, openPeriod, closeHour, closeMin, closePeriod] = timeMatch;
+              console.log(`Parsed yesterday: ${openHour}:${openMin || '00'} ${openPeriod} - ${closeHour}:${closeMin || '00'} ${closePeriod}`);
+              
+              // Check if we're in yesterday's overnight period
+              let closeTimeInMinutes = parseInt(closeHour) * 60 + parseInt(closeMin || '0');
+              if (closePeriod.toLowerCase() === 'pm' && parseInt(closeHour) !== 12) {
+                closeTimeInMinutes += 12 * 60;
+              }
+              if (closePeriod.toLowerCase() === 'am' && parseInt(closeHour) === 12) {
+                closeTimeInMinutes = parseInt(closeMin || '0');
+              }
+              
+              const currentTimeInMinutes = now.getHours() * 60 + now.getMinutes();
+              if (closePeriod.toLowerCase() === 'am' && closeTimeInMinutes <= 12 * 60) {
+                console.log(`Yesterday's overnight period detected. Current time (${currentTimeInMinutes}min) vs close time (${closeTimeInMinutes}min)`);
+                if (currentTimeInMinutes <= closeTimeInMinutes) {
+                  console.log(`*** STILL IN YESTERDAY'S OVERNIGHT PERIOD - Should show until ${closeHour}:${closeMin || '00'} ${closePeriod.toUpperCase()} ***`);
+                } else {
+                  console.log(`*** YESTERDAY'S OVERNIGHT PERIOD ENDED - Now checking today's hours ***`);
+                }
+              }
+            }
+          }
+        }
+        console.log(`Final isOpen status: ${details.opening_hours?.open_now !== undefined ? isOpenNow : customOpenCheck}`);
+        console.log(`Using ${details.opening_hours?.open_now !== undefined ? 'Google' : 'Custom'} logic for open status`);
+        console.log('---');
 
         // Get photo URL if available
         let photoUrl = undefined;
@@ -311,6 +710,9 @@ Respond with just one sentence, no quotes or extra text.`;
           aiRecommendation = `A ${ratingText} restaurant with ${rating}/5 stars.`;
         }
 
+        // Get real-time status information including overnight period details
+        const realTimeStatus = getRealTimeStatus(details.opening_hours?.weekday_text, details.opening_hours?.open_now);
+
         const restaurant: Restaurant = {
           id: place.place_id!,
           name: details.name || 'Unknown Restaurant',
@@ -319,7 +721,7 @@ Respond with just one sentence, no quotes or extra text.`;
           phone: details.formatted_phone_number,
           website: details.website,
           googleMapsUrl: `https://www.google.com/maps/place/?q=place_id:${place.place_id}`,
-          isOpen: isOpenNow,
+          isOpen: details.opening_hours?.open_now !== undefined ? isOpenNow : customOpenCheck, // Use Google's status if available, otherwise our logic
           openingHours: details.opening_hours?.weekday_text,
           priceLevel: details.price_level,
           photoUrl,
@@ -334,7 +736,8 @@ Respond with just one sentence, no quotes or extra text.`;
               details.geometry.location.lat, 
               details.geometry.location.lng
             ) : undefined,
-          aiRecommendation: aiRecommendation
+          aiRecommendation: aiRecommendation,
+          realTimeStatus: realTimeStatus
         };
 
         return restaurant;
@@ -346,14 +749,17 @@ Respond with just one sentence, no quotes or extra text.`;
 
     const restaurants = (await Promise.all(restaurantPromises)).filter(Boolean) as Restaurant[];
 
-    // Filter out restaurants where opening time has already passed and that are beyond the radius
+    // Filter to only show currently open restaurants and apply distance filtering
     const availableRestaurants = restaurants.filter(restaurant => {
-      // First check opening hours
-      if (restaurant.isOpen) {
-        // Restaurant is currently open, now check distance
-      } else {
-        // If opening time has passed today, exclude it
-        if (hasOpeningTimePassed(restaurant.openingHours)) return false;
+      // Skip if restaurant data is invalid
+      if (!restaurant) {
+        return false;
+      }
+      
+      // Only show currently open restaurants - trust Google's open_now status
+      if (!restaurant.isOpen) {
+        console.log(`Filtering out ${restaurant.name} - marked as closed`);
+        return false;
       }
       
       // Check distance if user coordinates are available

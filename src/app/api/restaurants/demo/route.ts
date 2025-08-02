@@ -1,5 +1,69 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+// Helper function to check if a restaurant is currently open
+function isRestaurantOpen(openingHours?: string[]): boolean {
+  if (!openingHours || openingHours.length === 0) {
+    return true; // Assume open if no hours provided
+  }
+
+  const now = new Date();
+  const currentDay = now.getDay(); // 0 = Sunday, 1 = Monday, etc.
+  const currentTime = now.getHours() * 100 + now.getMinutes(); // e.g., 14:30 = 1430
+
+  // Map day numbers to day names
+  const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+  const todayName = dayNames[currentDay];
+
+  // Find today's hours
+  const todayHours = openingHours.find(hours => 
+    hours.toLowerCase().includes(todayName)
+  );
+
+  if (!todayHours) {
+    return false; // No hours found for today
+  }
+
+  // Check if closed today
+  if (todayHours.toLowerCase().includes('closed')) {
+    return false;
+  }
+
+  // Extract time range - handle various formats
+  // Match patterns like "Monday: 9:00 AM – 9:00 PM" or "Monday: 9:00 AM - 9:00 PM"
+  const timeMatch = todayHours.match(/(\d{1,2}):(\d{2})\s*(AM|PM)\s*[–\-—]\s*(\d{1,2}):(\d{2})\s*(AM|PM)/i);
+  
+  if (!timeMatch) {
+    return true; // Assume open if can't parse hours
+  }
+
+  const [, openHour, openMin, openPeriod, closeHour, closeMin, closePeriod] = timeMatch;
+  
+  // Convert to 24-hour format
+  let openTime = parseInt(openHour) * 100 + parseInt(openMin);
+  let closeTime = parseInt(closeHour) * 100 + parseInt(closeMin);
+  
+  if (openPeriod.toUpperCase() === 'PM' && parseInt(openHour) !== 12) {
+    openTime += 1200;
+  }
+  if (openPeriod.toUpperCase() === 'AM' && parseInt(openHour) === 12) {
+    openTime = parseInt(openMin); // 12 AM = 00:xx
+  }
+  
+  if (closePeriod.toUpperCase() === 'PM' && parseInt(closeHour) !== 12) {
+    closeTime += 1200;
+  }
+  if (closePeriod.toUpperCase() === 'AM' && parseInt(closeHour) === 12) {
+    closeTime = parseInt(closeMin); // 12 AM = 00:xx
+  }
+
+  // Handle overnight hours (e.g., 9 PM - 2 AM)
+  if (closeTime < openTime) {
+    return currentTime >= openTime || currentTime <= closeTime;
+  }
+  
+  return currentTime >= openTime && currentTime <= closeTime;
+}
+
 // Demo data for testing without API keys
 const demoRestaurants = [
   {
@@ -235,13 +299,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Sort by: open restaurants first, then by rating
-    const sortedRestaurants = filteredRestaurants.sort((a, b) => {
-      // Open restaurants first
-      if (a.isOpen !== b.isOpen) {
-        return a.isOpen ? -1 : 1;
-      }
-      // Then by rating (highest first)
+    // Filter to only show currently open restaurants
+    const openRestaurants = filteredRestaurants.map(restaurant => ({
+      ...restaurant,
+      isOpen: isRestaurantOpen(restaurant.openingHours)
+    })).filter(restaurant => restaurant.isOpen);
+
+    // Sort by rating (highest first) since all are already open
+    const sortedRestaurants = openRestaurants.sort((a, b) => {
       return b.rating - a.rating;
     });
 

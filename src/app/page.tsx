@@ -290,7 +290,7 @@ export default function Home() {
             <div className="mb-4">
               <h2 className="card-title h3 fw-bold mb-0">
                 <i className="bi bi-search me-2 text-primary"></i>
-                Find Great Restaurants
+                Find Places to Eat
               </h2>
             </div>
             
@@ -336,7 +336,7 @@ export default function Home() {
             <div className="spinner-border text-primary" role="status" style={{ width: '3rem', height: '3rem' }}>
               <span className="visually-hidden">Loading...</span>
             </div>
-            <p className="mt-3 text-muted">Finding great restaurants for you...</p>
+            <p className="mt-3 text-muted">Find pleaces to eat for you...</p>
           </div>
         )}
 
