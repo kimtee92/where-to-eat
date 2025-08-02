@@ -20,35 +20,71 @@ export default function RootLayout({
   return (
     <html lang="en">
       <head>
+        <meta httpEquiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+        <meta httpEquiv="Pragma" content="no-cache" />
+        <meta httpEquiv="Expires" content="0" />
         <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet" />
         {googleMapsApiKey && (
           <script
             async
             defer
-            src={`https://maps.googleapis.com/maps/api/js?key=${googleMapsApiKey}&libraries=places`}
+            src={`https://maps.googleapis.com/maps/api/js?key=${googleMapsApiKey}&libraries=places&callback=initGoogleMaps&v=weekly`}
           ></script>
         )}
         <script
           dangerouslySetInnerHTML={{
             __html: `
-              // Simple detection without callback - more reliable
-              (function checkGoogleMaps() {
-                if (window.google && window.google.maps && window.google.maps.places) {
-                  console.log('✅ Google Maps API fully loaded');
-                  window.googleMapsReady = true;
-                } else {
-                  setTimeout(checkGoogleMaps, 100);
-                }
-              })();
+              console.log('📡 Google Maps initialization script loaded');
+              window.googleMapsLoaded = false;
               
-              // Error handling for script loading
-              window.addEventListener('error', function(e) {
-                if (e.target && e.target.src && e.target.src.includes('maps.googleapis.com')) {
-                  console.error('❌ Google Maps API script failed to load');
-                  console.error('URL:', e.target.src);
-                  console.error('Check: API key, internet connection, CORS settings');
+              window.initGoogleMaps = function() {
+                console.log('🎯 Google Maps callback triggered');
+                window.googleMapsLoaded = true;
+                
+                // Dispatch event immediately
+                if (typeof window !== 'undefined') {
+                  window.dispatchEvent(new CustomEvent('googleMapsReady', {
+                    detail: { timestamp: Date.now() }
+                  }));
+                  console.log('📢 Dispatched googleMapsReady event');
                 }
-              }, true);
+                
+                // Also set a flag that polling can detect
+                window.googleMapsInitialized = true;
+              };
+              
+              // Fallback detection for cases where callback doesn't fire
+              let fallbackAttempts = 0;
+              const maxFallbackAttempts = 100;
+              
+              const checkAndDispatch = () => {
+                fallbackAttempts++;
+                
+                if (window.google?.maps?.places?.Autocomplete && !window.googleMapsLoaded) {
+                  console.log('🔍 Fallback detection: Google Maps API found');
+                  window.googleMapsLoaded = true;
+                  window.googleMapsInitialized = true;
+                  
+                  window.dispatchEvent(new CustomEvent('googleMapsReady', {
+                    detail: { 
+                      timestamp: Date.now(),
+                      source: 'fallback',
+                      attempt: fallbackAttempts 
+                    }
+                  }));
+                  console.log('📢 Dispatched fallback googleMapsReady event');
+                  return true;
+                }
+                
+                if (fallbackAttempts < maxFallbackAttempts) {
+                  setTimeout(checkAndDispatch, 100);
+                }
+                
+                return false;
+              };
+              
+              // Start fallback checking
+              setTimeout(checkAndDispatch, 500);
             `
           }}
         />
