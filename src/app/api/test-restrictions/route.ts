@@ -93,41 +93,54 @@ export async function GET() {
           console.log('Photo name from API:', photoName);
           
           // Try different URL construction approaches
+          // Approach 1: Direct use of photo name (current approach)
           const photoUrl1 = `https://places.googleapis.com/v1/${photoName}/media?maxWidthPx=400&maxHeightPx=400&key=${apiKey}`;
-          const photoUrl2 = `https://places.googleapis.com/v1/${photoName}/media?maxWidthPx=400&maxHeightPx=400`;
           
-          console.log('URL approach 1:', photoUrl1.replace(apiKey, 'API_KEY'));
-          console.log('URL approach 2:', photoUrl2);
+          // Approach 2: Extract photo reference from name and use correct endpoint
+          // The photo name format is: places/PLACE_ID/photos/PHOTO_REFERENCE
+          const photoReference = photoName.split('/photos/')[1];
+          const photoUrl2 = `https://places.googleapis.com/v1/places/photos/${photoReference}/media?maxWidthPx=400&maxHeightPx=400&key=${apiKey}`;
           
-          // Test the first approach
+          // Approach 3: Use the name directly without extra v1 prefix
+          const photoUrl3 = `https://places.googleapis.com/${photoName}/media?maxWidthPx=400&maxHeightPx=400&key=${apiKey}`;
+          
+          console.log('URL approach 1 (direct):', photoUrl1.replace(apiKey, 'API_KEY'));
+          console.log('URL approach 2 (reference):', photoUrl2.replace(apiKey, 'API_KEY'));
+          console.log('URL approach 3 (no v1):', photoUrl3.replace(apiKey, 'API_KEY'));
+          
+          // Test all approaches
           const photoResponse1 = await fetch(photoUrl1, { method: 'HEAD' });
+          const photoResponse2 = await fetch(photoUrl2, { method: 'HEAD' });
+          const photoResponse3 = await fetch(photoUrl3, { method: 'HEAD' });
+          
           console.log('Approach 1 status:', photoResponse1.status);
-          
-          // Test the second approach with API key in header
-          const photoResponse2 = await fetch(photoUrl2, { 
-            method: 'HEAD',
-            headers: {
-              'X-Goog-Api-Key': apiKey
-            }
-          });
           console.log('Approach 2 status:', photoResponse2.status);
+          console.log('Approach 3 status:', photoResponse3.status);
           
-          const finalResponse = photoResponse2.ok ? photoResponse2 : photoResponse1;
-          const finalUrl = photoResponse2.ok ? photoUrl2 : photoUrl1;
+          const workingResponse = photoResponse1.ok ? photoResponse1 : 
+                                 photoResponse2.ok ? photoResponse2 : 
+                                 photoResponse3.ok ? photoResponse3 : photoResponse1;
+          const workingUrl = photoResponse1.ok ? photoUrl1 : 
+                            photoResponse2.ok ? photoUrl2 : 
+                            photoResponse3.ok ? photoUrl3 : photoUrl1;
+          const workingApproach = photoResponse1.ok ? 'Direct name' : 
+                                 photoResponse2.ok ? 'Photo reference' : 
+                                 photoResponse3.ok ? 'No v1 prefix' : 'None working';
           
           results.tests.push({
             name: 'Places API v1 - Photo Media',
-            status: finalResponse.ok ? 'PASS' : 'FAIL',
-            statusCode: finalResponse.status,
-            photoUrl: finalUrl.replace(apiKey, 'API_KEY'),
+            status: workingResponse.ok ? 'PASS' : 'FAIL',
+            statusCode: workingResponse.status,
+            photoUrl: workingUrl.replace(apiKey, 'API_KEY'),
             photoName: photoName,
             approach1Status: photoResponse1.status,
             approach2Status: photoResponse2.status,
-            workingApproach: photoResponse2.ok ? 'Header-based' : photoResponse1.ok ? 'Query-param-based' : 'Neither',
-            contentType: finalResponse.headers.get('content-type')
+            approach3Status: photoResponse3.status,
+            workingApproach: workingApproach,
+            contentType: workingResponse.headers.get('content-type')
           });
           
-          if (finalResponse.ok) {
+          if (workingResponse.ok) {
             results.summary.passed++;
           } else {
             results.summary.failed++;
