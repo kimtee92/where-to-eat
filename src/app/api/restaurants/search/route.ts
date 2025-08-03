@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
-import { googleMapsClient } from '@/lib/google-maps-client';
 import dbConnect from '@/lib/mongodb';
 import SearchHistory from '@/models/SearchHistory';
 import PopularKeyword from '@/models/PopularKeyword';
@@ -9,6 +8,151 @@ import PopularKeyword from '@/models/PopularKeyword';
 const anthropic = new Anthropic({
   apiKey: process.env.CLAUDE_API_KEY,
 });
+
+// New Places API helper functions
+interface PlaceSearchRequest {
+  textQuery: string;
+  locationBias?: {
+    circle: {
+      center: {
+        latitude: number;
+        longitude: number;
+      };
+      radius: number;
+    };
+  };
+  maxResultCount?: number;
+  includedType?: string;
+  languageCode?: string;
+}
+
+interface PlaceDetailsRequest {
+  name: string;
+  languageCode?: string;
+}
+
+interface PlaceResult {
+  id: string;
+  displayName?: {
+    text: string;
+  };
+  formattedAddress?: string;
+  location?: {
+    latitude: number;
+    longitude: number;
+  };
+  rating?: number;
+  googleMapsUri?: string;
+  websiteUri?: string;
+  nationalPhoneNumber?: string;
+  priceLevel?: string;
+  userRatingCount?: number;
+  businessStatus?: string;
+  currentOpeningHours?: {
+    openNow?: boolean;
+    weekdayDescriptions?: string[];
+  };
+  photos?: Array<{
+    name: string;
+    widthPx: number;
+    heightPx: number;
+  }>;
+  reviews?: Array<{
+    name: string;
+    relativePublishTimeDescription: string;
+    rating: number;
+    text: {
+      text: string;
+    };
+    authorAttribution: {
+      displayName: string;
+      photoUri?: string;
+    };
+  }>;
+}
+
+interface SearchTextResponse {
+  places: PlaceResult[];
+}
+
+// Function to search places using new Places API
+async function searchPlacesText(request: PlaceSearchRequest): Promise<SearchTextResponse> {
+  const url = 'https://places.googleapis.com/v1/places:searchText';
+  
+  const headers = {
+    'Content-Type': 'application/json',
+    'X-Goog-Api-Key': process.env.GOOGLE_PLACES_API_KEY!,
+    'X-Goog-FieldMask': 'places.id,places.displayName,places.formattedAddress,places.location,places.rating,places.googleMapsUri,places.websiteUri,places.nationalPhoneNumber,places.priceLevel,places.userRatingCount,places.businessStatus,places.currentOpeningHours,places.photos,places.reviews'
+  };
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(request)
+  });
+
+  if (!response.ok) {
+    throw new Error(`Places API search failed: ${response.status} ${response.statusText}`);
+  }
+
+  return response.json();
+}
+
+// Function to get place details using new Places API
+async function getPlaceDetails(placeId: string): Promise<PlaceResult> {
+  const url = `https://places.googleapis.com/v1/places/${placeId}`;
+  
+  const headers = {
+    'X-Goog-Api-Key': process.env.GOOGLE_PLACES_API_KEY!,
+    'X-Goog-FieldMask': 'id,displayName,formattedAddress,location,rating,googleMapsUri,websiteUri,nationalPhoneNumber,priceLevel,userRatingCount,businessStatus,currentOpeningHours,photos,reviews'
+  };
+
+  const response = await fetch(url, {
+    method: 'GET',
+    headers
+  });
+
+  if (!response.ok) {
+    throw new Error(`Places API details failed: ${response.status} ${response.statusText}`);
+  }
+
+  return response.json();
+}
+
+// Function to get timezone information
+async function getTimezone(lat: number, lng: number, timestamp?: number): Promise<any> {
+  const url = 'https://maps.googleapis.com/maps/api/timezone/json';
+  const params = new URLSearchParams({
+    location: `${lat},${lng}`,
+    timestamp: String(timestamp || Math.floor(Date.now() / 1000)),
+    key: process.env.GOOGLE_PLACES_API_KEY!
+  });
+
+  const response = await fetch(`${url}?${params}`);
+  
+  if (!response.ok) {
+    throw new Error(`Timezone API failed: ${response.status} ${response.statusText}`);
+  }
+
+  return response.json();
+}
+
+// Function to reverse geocode coordinates
+async function reverseGeocode(lat: number, lng: number): Promise<any> {
+  const url = 'https://maps.googleapis.com/maps/api/geocode/json';
+  const params = new URLSearchParams({
+    latlng: `${lat},${lng}`,
+    key: process.env.GOOGLE_PLACES_API_KEY!
+  });
+
+  const response = await fetch(`${url}?${params}`);
+  
+  if (!response.ok) {
+    throw new Error(`Geocoding API failed: ${response.status} ${response.statusText}`);
+  }
+
+  return response.json();
+}
 
 // Helper function to extract and update keywords in database
 async function updateKeywords(preferences: string) {
@@ -173,30 +317,23 @@ function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
 }
 
 // Helper function to get timezone and local time for a location
+// Helper function to get the current time at a specific location (considering timezone)
 async function getLocationTime(lat: number, lng: number): Promise<Date> {
   try {
-    const timestamp = Math.floor(Date.now() / 1000);
-    const timezoneResponse = await googleMapsClient.timezone({
-      params: {
-        location: `${lat},${lng}`,
-        timestamp: timestamp,
-        key: process.env.GOOGLE_PLACES_API_KEY!,
-      },
-    });
-
-    if (timezoneResponse.data.status === 'OK') {
-      const { dstOffset, rawOffset } = timezoneResponse.data;
-      const totalOffsetSeconds = dstOffset + rawOffset; // Total offset in seconds from UTC
+    const timezoneResponse = await getTimezone(lat, lng);
+    
+    if (timezoneResponse.status === 'OK') {
+      const { dstOffset, rawOffset } = timezoneResponse;
+      const totalOffset = (dstOffset + rawOffset) * 1000; // Convert to milliseconds
       
-      // Create a new Date object representing the local time at the target location
-      // We need to get the UTC time and then adjust it by the location's offset
-      const now = new Date();
-      const utcTime = now.getTime() + (now.getTimezoneOffset() * 60 * 1000); // Convert to true UTC
-      const localTime = new Date(utcTime + (totalOffsetSeconds * 1000));
+      // Get UTC time and add the timezone offset
+      const utcTime = Date.now();
+      const localTime = new Date(utcTime + totalOffset);
       
       return localTime;
     }
-  } catch {
+  } catch (error) {
+    console.error('Error getting timezone:', error);
     // Fallback to current time if timezone API fails
   }
   
@@ -615,15 +752,10 @@ export async function POST(request: NextRequest) {
       
       // Use reverse geocoding to get a readable location name
       try {
-        const geocodeResponse = await googleMapsClient.reverseGeocode({
-          params: {
-            latlng: `${lat},${lng}`,
-            key: process.env.GOOGLE_PLACES_API_KEY!,
-          },
-        });
+        const geocodeResponse = await reverseGeocode(lat, lng);
         
-        if (geocodeResponse.data.results && geocodeResponse.data.results[0]) {
-          const result = geocodeResponse.data.results[0];
+        if (geocodeResponse.results && geocodeResponse.results[0]) {
+          const result = geocodeResponse.results[0];
           searchLocation = result.formatted_address;
           
           // Use the coordinates from the location input
@@ -657,30 +789,35 @@ export async function POST(request: NextRequest) {
       }
     }
     
-    // Prepare the API call parameters
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const searchParams: Record<string, any> = {
-      query: searchQuery,
-      key: process.env.GOOGLE_PLACES_API_KEY || '',
+    // Step 1: Build search request for new Places API
+    const searchRequest: PlaceSearchRequest = {
+      textQuery: searchQuery,
+      maxResultCount: 20, // Increased from 12
+      languageCode: 'en'
     };
 
-    // Only add location and radius if userCoords is defined and has lat/lng properties
+    // Add location bias if coordinates are available
     if (userCoords && typeof userCoords === 'object' && 'lat' in userCoords && 'lng' in userCoords) {
-      searchParams.location = `${userCoords.lat},${userCoords.lng}`;
-      searchParams.radius = radius; // Use the provided radius
+      searchRequest.locationBias = {
+        circle: {
+          center: {
+            latitude: userCoords.lat,
+            longitude: userCoords.lng
+          },
+          radius: radius // radius in meters
+        }
+      };
     }
 
-    // Add type if it's not the default restaurant type
+    // Add type filter if not default restaurant
     if (searchType !== 'restaurant') {
-      searchParams.type = searchType;
+      searchRequest.includedType = searchType;
     }
 
-    const placesResponse = await googleMapsClient.textSearch({
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      params: searchParams as any,
-    });
+    // Search using new Places API
+    const placesResponse = await searchPlacesText(searchRequest);
 
-    if (!placesResponse.data.results || placesResponse.data.results.length === 0) {
+    if (!placesResponse.places || placesResponse.places.length === 0) {
       return NextResponse.json({
         restaurants: [],
         message: 'No places found in the specified location',
@@ -688,34 +825,26 @@ export async function POST(request: NextRequest) {
     }
 
     // Step 2: Get detailed information for each restaurant
-    const restaurantPromises = placesResponse.data.results.slice(0, 12).map(async (place) => {
+    const restaurantPromises = placesResponse.places.slice(0, 20).map(async (place: PlaceResult) => {
       try {
-        // Get place details
-        const detailsResponse = await googleMapsClient.placeDetails({
-          params: {
-            place_id: place.place_id!,
-            key: process.env.GOOGLE_PLACES_API_KEY!,
-            fields: ['name', 'formatted_address', 'formatted_phone_number', 'website', 'rating', 'opening_hours', 'price_level', 'photos', 'geometry', 'reviews', 'business_status'],
-          },
-        });
-
-        const details = detailsResponse.data.result;
-        const _isOpenNow = details.opening_hours?.open_now ?? false;
+        // The new API returns more complete data, so we can work with it directly
+        const details = place;
+        const _isOpenNow = details.currentOpeningHours?.openNow ?? false;
         
         // Get the local time for this restaurant's location
         let restaurantLocalTime = new Date(); // Fallback to current time
-        if (details.geometry?.location) {
+        if (details.location) {
           restaurantLocalTime = await getLocationTime(
-            details.geometry.location.lat,
-            details.geometry.location.lng
+            details.location.latitude,
+            details.location.longitude
           );
         }
         
         // Also check with our custom logic for comparison using restaurant's local time
-        const _customOpenCheck = isRestaurantOpen(details.opening_hours?.weekday_text, restaurantLocalTime);
+        const _customOpenCheck = isRestaurantOpen(details.currentOpeningHours?.weekdayDescriptions, restaurantLocalTime);
 
         // Skip places with no opening hours data or temporarily closed status
-        if (!details.opening_hours?.weekday_text || details.business_status === 'CLOSED_TEMPORARILY') {
+        if (!details.currentOpeningHours?.weekdayDescriptions || details.businessStatus === 'CLOSED_TEMPORARILY') {
           return null;
         }
 
@@ -723,10 +852,10 @@ export async function POST(request: NextRequest) {
         // Google's open_now might use different timezone calculations
 
         // Skip if no opening hours data or temporarily closed
-        if (!details.opening_hours?.weekday_text || details.business_status === 'CLOSED_TEMPORARILY') {
+        if (!details.currentOpeningHours?.weekdayDescriptions || details.businessStatus === 'CLOSED_TEMPORARILY') {
           return null;
         }
-        if (details.opening_hours?.weekday_text) {
+        if (details.currentOpeningHours?.weekdayDescriptions) {
           const currentDay = restaurantLocalTime.getDay();
           const dayNames = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
           const googleDayIndex = currentDay === 0 ? 6 : currentDay - 1;
@@ -734,8 +863,8 @@ export async function POST(request: NextRequest) {
           const yesterdayDayIndex = currentDay === 0 ? 5 : (currentDay === 1 ? 6 : currentDay - 2);
           const yesterdayName = dayNames[yesterdayDayIndex];
           
-          const todaysHoursEntry = details.opening_hours.weekday_text.find(h => h.toLowerCase().includes(todayName));
-          const yesterdaysHoursEntry = details.opening_hours.weekday_text.find(h => h.toLowerCase().includes(yesterdayName));
+          const todaysHoursEntry = details.currentOpeningHours.weekdayDescriptions.find((h: string) => h.toLowerCase().includes(todayName));
+          const yesterdaysHoursEntry = details.currentOpeningHours.weekdayDescriptions.find((h: string) => h.toLowerCase().includes(yesterdayName));
           
           // Parse and show the times we're working with
           if (todaysHoursEntry && !todaysHoursEntry.toLowerCase().includes('closed')) {
@@ -768,11 +897,11 @@ export async function POST(request: NextRequest) {
           }
         }
 
-        // Get photo URL if available
+        // Get photo URL if available (new Places API format)
         let photoUrl = undefined;
         if (details.photos && details.photos.length > 0) {
-          const photoReference = details.photos[0].photo_reference;
-          photoUrl = `https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photo_reference=${photoReference}&key=${process.env.GOOGLE_PLACES_API_KEY}`;
+          const photoName = details.photos[0].name;
+          photoUrl = `https://places.googleapis.com/v1/${photoName}/media?maxWidthPx=400&key=${process.env.GOOGLE_PLACES_API_KEY}`;
         }
 
         // Generate one-sentence AI recommendation based on recent reviews
@@ -781,12 +910,12 @@ export async function POST(request: NextRequest) {
         if (details.reviews && details.reviews.length > 0) {
           try {
             const recentReviews = details.reviews.slice(0, 5);
-            const reviewTexts = recentReviews.map(r => r.text).filter(text => text && text.length > 0);
+            const reviewTexts = recentReviews.map((r: any) => r.text?.text).filter((text: any) => text && text.length > 0);
             if (reviewTexts.length > 0) {
-              const reviewPrompt = `Based on these recent Google Maps reviews for ${details.name}, write ONE concise sentence (max 15 words) highlighting what makes this restaurant special:
+              const reviewPrompt = `Based on these recent Google Maps reviews for ${details.displayName?.text}, write ONE concise sentence (max 15 words) highlighting what makes this restaurant special:
 
 Recent reviews:
-${reviewTexts.slice(0, 3).map((text, i) => `${i + 1}. "${text.substring(0, 150)}"`).join('\n')}
+${reviewTexts.slice(0, 3).map((text: any, i: number) => `${i + 1}. "${text.substring(0, 150)}"`).join('\n')}
 
 Respond with just one sentence, no quotes or extra text.`;
 
@@ -809,7 +938,7 @@ Respond with just one sentence, no quotes or extra text.`;
               aiRecommendation = `A ${ratingText} restaurant with ${rating}/5 stars.`;
             }
           } catch (error) {
-            console.error(`Error generating AI recommendation for ${details.name}:`, error);
+            console.error(`Error generating AI recommendation for ${details.displayName?.text}:`, error);
             // Fallback: Create a simple recommendation based on available data
             const rating = details.rating || 0;
             const ratingText = rating >= 4.5 ? 'highly rated' : 
@@ -827,7 +956,7 @@ Respond with just one sentence, no quotes or extra text.`;
         }
 
         // Get real-time status information including overnight period details using restaurant's local time
-        const realTimeStatus = getRealTimeStatus(details.opening_hours?.weekday_text, details.opening_hours?.open_now, restaurantLocalTime);
+        const realTimeStatus = getRealTimeStatus(details.currentOpeningHours?.weekdayDescriptions, details.currentOpeningHours?.openNow, restaurantLocalTime);
 
         // Skip if our timezone-aware logic says it's closed
         if (!realTimeStatus.isOpen) {
@@ -835,29 +964,33 @@ Respond with just one sentence, no quotes or extra text.`;
         }
 
         const restaurant: Restaurant = {
-          id: place.place_id!,
-          name: details.name || 'Unknown Restaurant',
+          id: details.id,
+          name: details.displayName?.text || 'Unknown Restaurant',
           rating: details.rating || 0,
-          address: details.formatted_address || 'Address not available',
-          phone: details.formatted_phone_number,
-          website: details.website,
-          googleMapsUrl: details.geometry?.location 
-            ? `https://www.google.com/maps/search/?api=1&query=${details.geometry.location.lat},${details.geometry.location.lng}&query_place_id=${place.place_id}`
-            : `https://www.google.com/maps/place/?q=place_id:${place.place_id}`,
+          address: details.formattedAddress || 'Address not available',
+          phone: details.nationalPhoneNumber,
+          website: details.websiteUri,
+          googleMapsUrl: details.googleMapsUri || 
+            (details.location 
+              ? `https://www.google.com/maps/search/?api=1&query=${details.location.latitude},${details.location.longitude}`
+              : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(details.displayName?.text || '')}`),
           isOpen: realTimeStatus.isOpen, // Use timezone-aware status from realTimeStatus
-          openingHours: details.opening_hours?.weekday_text,
-          priceLevel: details.price_level,
+          openingHours: details.currentOpeningHours?.weekdayDescriptions,
+          priceLevel: details.priceLevel === 'PRICE_LEVEL_INEXPENSIVE' ? 1 :
+                     details.priceLevel === 'PRICE_LEVEL_MODERATE' ? 2 :
+                     details.priceLevel === 'PRICE_LEVEL_EXPENSIVE' ? 3 :
+                     details.priceLevel === 'PRICE_LEVEL_VERY_EXPENSIVE' ? 4 : undefined,
           photoUrl,
-          geometry: details.geometry?.location ? {
-            lat: details.geometry.location.lat,
-            lng: details.geometry.location.lng
+          geometry: details.location ? {
+            lat: details.location.latitude,
+            lng: details.location.longitude
           } : undefined,
-          distance: userCoords && details.geometry?.location ? 
+          distance: userCoords && details.location ? 
             calculateDistance(
               userCoords.lat, 
               userCoords.lng, 
-              details.geometry.location.lat, 
-              details.geometry.location.lng
+              details.location.latitude, 
+              details.location.longitude
             ) : undefined,
           aiRecommendation: aiRecommendation,
           realTimeStatus: realTimeStatus
@@ -865,7 +998,7 @@ Respond with just one sentence, no quotes or extra text.`;
 
         return restaurant;
       } catch (error) {
-        console.error('Error fetching restaurant details:', error);
+        console.error('Error processing restaurant details:', error);
         return null;
       }
     });

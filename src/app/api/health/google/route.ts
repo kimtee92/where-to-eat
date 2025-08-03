@@ -1,5 +1,4 @@
 import { NextResponse } from 'next/server';
-import { Client } from '@googlemaps/google-maps-services-js';
 
 export async function GET() {
   try {
@@ -12,23 +11,29 @@ export async function GET() {
       );
     }
 
-    // Test the Google Places API with a simple request
-    const googleMapsClient = new Client({});
-    
-    const response = await googleMapsClient.textSearch({
-      params: {
-        query: 'restaurant',
-        key: apiKey,
+    // Test the new Google Places API with a simple request
+    const response = await fetch('https://places.googleapis.com/v1/places:searchText', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Goog-Api-Key': apiKey,
+        'X-Goog-FieldMask': 'places.id,places.displayName'
       },
+      body: JSON.stringify({
+        textQuery: 'restaurant',
+        maxResultCount: 1
+      })
     });
 
-    if (response.data.status === 'OK') {
+    if (response.ok) {
+      const data = await response.json();
       return NextResponse.json({ 
         status: 'connected', 
-        message: 'Google Places API is working'
+        message: 'Google Places API (New) is working',
+        apiVersion: 'v1'
       });
     } else {
-      throw new Error(`API returned status: ${response.data.status}`);
+      throw new Error(`API returned status: ${response.status} ${response.statusText}`);
     }
 
   } catch (error) {
