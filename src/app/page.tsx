@@ -240,7 +240,7 @@ export default function Home() {
       } else {
         setRestaurants([]);
         setOriginalRestaurants([]);
-        setError('No restaurants found in this location. Try a different search.');
+        setError('No places found in this location. Try a different search.');
       }
     } catch (err) {
       console.error('Search error:', err);
