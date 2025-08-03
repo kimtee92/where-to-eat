@@ -92,21 +92,42 @@ export async function GET() {
           const photoName = placeWithPhotos.photos[0].name;
           console.log('Photo name from API:', photoName);
           
-          // The photo name should be the direct resource name
-          const photoUrl = `https://places.googleapis.com/v1/${photoName}/media?maxWidthPx=400&maxHeightPx=400&key=${apiKey}`;
+          // Try different URL construction approaches
+          const photoUrl1 = `https://places.googleapis.com/v1/${photoName}/media?maxWidthPx=400&maxHeightPx=400&key=${apiKey}`;
+          const photoUrl2 = `https://places.googleapis.com/v1/${photoName}/media?maxWidthPx=400&maxHeightPx=400`;
           
-          const photoResponse = await fetch(photoUrl, { method: 'HEAD' });
+          console.log('URL approach 1:', photoUrl1.replace(apiKey, 'API_KEY'));
+          console.log('URL approach 2:', photoUrl2);
+          
+          // Test the first approach
+          const photoResponse1 = await fetch(photoUrl1, { method: 'HEAD' });
+          console.log('Approach 1 status:', photoResponse1.status);
+          
+          // Test the second approach with API key in header
+          const photoResponse2 = await fetch(photoUrl2, { 
+            method: 'HEAD',
+            headers: {
+              'X-Goog-Api-Key': apiKey
+            }
+          });
+          console.log('Approach 2 status:', photoResponse2.status);
+          
+          const finalResponse = photoResponse2.ok ? photoResponse2 : photoResponse1;
+          const finalUrl = photoResponse2.ok ? photoUrl2 : photoUrl1;
           
           results.tests.push({
             name: 'Places API v1 - Photo Media',
-            status: photoResponse.ok ? 'PASS' : 'FAIL',
-            statusCode: photoResponse.status,
-            photoUrl: photoUrl.replace(apiKey, 'API_KEY'),
+            status: finalResponse.ok ? 'PASS' : 'FAIL',
+            statusCode: finalResponse.status,
+            photoUrl: finalUrl.replace(apiKey, 'API_KEY'),
             photoName: photoName,
-            contentType: photoResponse.headers.get('content-type')
+            approach1Status: photoResponse1.status,
+            approach2Status: photoResponse2.status,
+            workingApproach: photoResponse2.ok ? 'Header-based' : photoResponse1.ok ? 'Query-param-based' : 'Neither',
+            contentType: finalResponse.headers.get('content-type')
           });
           
-          if (photoResponse.ok) {
+          if (finalResponse.ok) {
             results.summary.passed++;
           } else {
             results.summary.failed++;
