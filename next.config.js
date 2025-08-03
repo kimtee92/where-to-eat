@@ -1,5 +1,20 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Configure external image domains
+  images: {
+    remotePatterns: [
+      {
+        protocol: 'https',
+        hostname: 'maps.googleapis.com',
+        port: '',
+        pathname: '/maps/api/place/photo**',
+      },
+    ],
+  },
+  
+  // External packages for server components
+  serverExternalPackages: ['@googlemaps/google-maps-services-js'],
+  
   // Allow access from local network devices during development
   // Note: allowedDevOrigins is not available in current Next.js version
   // Using headers instead for CORS support

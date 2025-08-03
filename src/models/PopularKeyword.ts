@@ -36,8 +36,7 @@ const PopularKeywordSchema = new Schema<IPopularKeyword>(
   }
 );
 
-// Add indexes
-PopularKeywordSchema.index({ keyword: 1 });
+// Add indexes (keyword unique index is already created by unique: true)
 PopularKeywordSchema.index({ category: 1, count: -1 });
 PopularKeywordSchema.index({ count: -1, lastUsed: -1 });
 

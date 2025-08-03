@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
-import { Client } from '@googlemaps/google-maps-services-js';
+import { googleMapsClient } from '@/lib/google-maps-client';
 import dbConnect from '@/lib/mongodb';
 import SearchHistory from '@/models/SearchHistory';
 import PopularKeyword from '@/models/PopularKeyword';
@@ -9,8 +9,6 @@ import PopularKeyword from '@/models/PopularKeyword';
 const anthropic = new Anthropic({
   apiKey: process.env.CLAUDE_API_KEY,
 });
-
-const googleMapsClient = new Client({});
 
 // Helper function to extract and update keywords in database
 async function updateKeywords(preferences: string) {
@@ -115,7 +113,7 @@ async function updateKeywords(preferences: string) {
         );
       }
     }
-  } catch (_error) {
+  } catch {
     // Silent fail for background keyword updates
   }
 }
@@ -149,7 +147,7 @@ async function saveSearchHistory(
     };
 
     await SearchHistory.create(searchData);
-  } catch (_error) {
+  } catch {
     // Silent fail for background search history save
   }
 }
@@ -192,7 +190,7 @@ async function getLocationTime(lat: number, lng: number): Promise<Date> {
       
       return localTime;
     }
-  } catch (_error) {
+  } catch {
     // Fallback to current time if timezone API fails
   }
   
@@ -384,7 +382,7 @@ function getRealTimeStatus(openingHours?: string[], googleOpenNow?: boolean, cur
     const timeMatch = yesterdayHours.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)\s*[–\-—]\s*(\d{1,2})(?::(\d{2}))?\s*(am|pm)/i);
     
     if (timeMatch) {
-      const [, openHour, openMin, openPeriod, closeHour, closeMin, closePeriod] = timeMatch;
+      const [, _openHour, _openMin, _openPeriod, closeHour, closeMin, closePeriod] = timeMatch;
       
       let closeTimeInMinutes = parseInt(closeHour) * 60 + parseInt(closeMin || '0');
       
@@ -662,7 +660,7 @@ export async function POST(request: NextRequest) {
       };
       
       // Dietary restrictions
-      const dietaryKeywords = ['vegetarian', 'vegan', 'gluten free', 'halal', 'kosher', 'keto', 'paleo'];
+      const _dietaryKeywords = ['vegetarian', 'vegan', 'gluten free', 'halal', 'kosher', 'keto', 'paleo'];
       
       // Find matching cuisine
       let foundCuisine = '';
@@ -700,9 +698,10 @@ export async function POST(request: NextRequest) {
     }
     
     // Prepare the API call parameters
-    const searchParams: any = {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const searchParams: Record<string, any> = {
       query: searchQuery,
-      key: process.env.GOOGLE_PLACES_API_KEY,
+      key: process.env.GOOGLE_PLACES_API_KEY || '',
     };
 
     // Only add location and radius if userCoords is defined and has lat/lng properties
@@ -717,7 +716,8 @@ export async function POST(request: NextRequest) {
     }
 
     const placesResponse = await googleMapsClient.textSearch({
-      params: searchParams,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      params: searchParams as any,
     });
 
     if (!placesResponse.data.results || placesResponse.data.results.length === 0) {
@@ -735,12 +735,12 @@ export async function POST(request: NextRequest) {
           params: {
             place_id: place.place_id!,
             key: process.env.GOOGLE_PLACES_API_KEY!,
-            fields: ['name', 'formatted_address', 'formatted_phone_number', 'website', 'rating', 'opening_hours', 'price_level', 'photos', 'geometry', 'reviews', 'business_status'] as any,
+            fields: ['name', 'formatted_address', 'formatted_phone_number', 'website', 'rating', 'opening_hours', 'price_level', 'photos', 'geometry', 'reviews', 'business_status'],
           },
         });
 
         const details = detailsResponse.data.result;
-        const isOpenNow = details.opening_hours?.open_now ?? false;
+        const _isOpenNow = details.opening_hours?.open_now ?? false;
         
         // Get the local time for this restaurant's location
         let restaurantLocalTime = new Date(); // Fallback to current time
@@ -752,7 +752,7 @@ export async function POST(request: NextRequest) {
         }
         
         // Also check with our custom logic for comparison using restaurant's local time
-        const customOpenCheck = isRestaurantOpen(details.opening_hours?.weekday_text, restaurantLocalTime);
+        const _customOpenCheck = isRestaurantOpen(details.opening_hours?.weekday_text, restaurantLocalTime);
 
         // Skip places with no opening hours data or temporarily closed status
         if (!details.opening_hours?.weekday_text || details.business_status === 'CLOSED_TEMPORARILY') {
@@ -779,13 +779,13 @@ export async function POST(request: NextRequest) {
           
           // Parse and show the times we're working with
           if (todaysHoursEntry && !todaysHoursEntry.toLowerCase().includes('closed')) {
-            const timeMatch = todaysHoursEntry.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)\s*[–\-—]\s*(\d{1,2})(?::(\d{2}))?\s*(am|pm)/i);
+            const _timeMatch = todaysHoursEntry.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)\s*[–\-—]\s*(\d{1,2})(?::(\d{2}))?\s*(am|pm)/i);
           }
           
           if (yesterdaysHoursEntry && !yesterdaysHoursEntry.toLowerCase().includes('closed')) {
             const timeMatch = yesterdaysHoursEntry.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)\s*[–\-—]\s*(\d{1,2})(?::(\d{2}))?\s*(am|pm)/i);
             if (timeMatch) {
-              const [, openHour, openMin, openPeriod, closeHour, closeMin, closePeriod] = timeMatch;
+              const [, _openHour, _openMin, _openPeriod, closeHour, closeMin, closePeriod] = timeMatch;
               
               // Check if we're in yesterday's overnight period using restaurant's local time
               let closeTimeInMinutes = parseInt(closeHour) * 60 + parseInt(closeMin || '0');

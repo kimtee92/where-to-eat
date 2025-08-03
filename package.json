@@ -3,13 +3,14 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --turbopack",
-    "dev-standard": "next dev",
-    "dev-https": "next dev --turbopack --experimental-https",
-    "dev-mobile": "next dev -H 0.0.0.0 --experimental-https",
-    "build": "next build",
-    "start": "next start",
+    "dev": "node -r ./suppress-warnings.js node_modules/next/dist/bin/next dev --turbopack",
+    "dev-standard": "node -r ./suppress-warnings.js node_modules/next/dist/bin/next dev",
+    "dev-https": "node -r ./suppress-warnings.js node_modules/next/dist/bin/next dev --turbopack --experimental-https",
+    "dev-mobile": "node -r ./suppress-warnings.js node_modules/next/dist/bin/next dev -H 0.0.0.0 --experimental-https",
+    "build": "node -r ./suppress-warnings.js node_modules/next/dist/bin/next build",
+    "start": "node -r ./suppress-warnings.js node_modules/next/dist/bin/next start",
     "lint": "next lint",
+    "security-audit": "npm audit && echo 'Security audit completed ✅'",
     "heroku-postbuild": "npm run build"
   },
   "engines": {
@@ -32,7 +33,7 @@
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
-    "@types/googlemaps": "^3.43.3",
+    "@types/google.maps": "^3.58.1",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
