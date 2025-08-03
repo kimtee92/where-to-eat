@@ -897,12 +897,14 @@ export async function POST(request: NextRequest) {
           }
         }
 
-        // Get photo URL if available (new Places API format)
+        // Get photo URL if available (use Legacy Maps API - confirmed working)
         let photoUrl = undefined;
         if (details.photos && details.photos.length > 0) {
           const photoName = details.photos[0].name;
-          // For Places API v1, use the photo name directly in the media endpoint
-          photoUrl = `https://places.googleapis.com/v1/${photoName}/media?maxWidthPx=400&maxHeightPx=400&key=${process.env.GOOGLE_PLACES_API_KEY}`;
+          // Extract photo reference from the Places v1 photo name
+          const photoReference = photoName.split('/photos/')[1];
+          // Use Legacy Maps API photo endpoint (confirmed working via testing)
+          photoUrl = `https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photo_reference=${photoReference}&key=${process.env.GOOGLE_PLACES_API_KEY}`;
         }
 
         // Generate one-sentence AI recommendation based on recent reviews
