@@ -36,6 +36,13 @@ yarn-error.log*
 # vercel
 .vercel
 
+# heroku
+Procfile.dev
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# CI/CD
+.env.production
+deployment-logs.txt
