@@ -15,13 +15,20 @@ async function updateKeywords(preferences: string) {
   if (!preferences) return;
 
   try {
+    // Debug logging for MongoDB URI
+    console.log('🔍 Keywords Update - MongoDB Debug Info:');
+    console.log('- MONGODB_URI exists:', !!process.env.MONGODB_URI);
+    console.log('- Preferences to process:', preferences);
+    
     // Skip database operations during build time or if no valid URI
     if (!process.env.MONGODB_URI || 
         process.env.MONGODB_URI.includes('dummy') || 
         process.env.MONGODB_URI === 'mongodb://localhost:27017/where-to-eat') {
-      console.warn('Skipping keyword update - no valid MongoDB URI');
+      console.warn('❌ Skipping keyword update - no valid MongoDB URI');
       return;
     }
+    
+    console.log('✅ MongoDB URI is valid, attempting to update keywords...');
     
     await dbConnect();
 
@@ -131,13 +138,22 @@ async function saveSearchHistory(
   request?: NextRequest
 ) {
   try {
+    // Debug logging for MongoDB URI
+    console.log('🔍 MongoDB Debug Info:');
+    console.log('- MONGODB_URI exists:', !!process.env.MONGODB_URI);
+    console.log('- MONGODB_URI starts with mongodb:', process.env.MONGODB_URI?.startsWith('mongodb'));
+    console.log('- MONGODB_URI contains dummy:', process.env.MONGODB_URI?.includes('dummy'));
+    console.log('- NODE_ENV:', process.env.NODE_ENV);
+    
     // Skip database operations during build time or if no valid URI
     if (!process.env.MONGODB_URI || 
         process.env.MONGODB_URI.includes('dummy') || 
         process.env.MONGODB_URI === 'mongodb://localhost:27017/where-to-eat') {
-      console.warn('Skipping search history save - no valid MongoDB URI');
+      console.warn('❌ Skipping search history save - no valid MongoDB URI');
       return;
     }
+    
+    console.log('✅ MongoDB URI is valid, attempting to save search history...');
     
     await dbConnect();
 
@@ -152,8 +168,11 @@ async function saveSearchHistory(
       // ipAddress: request?.headers.get('x-forwarded-for') || request?.headers.get('x-real-ip') || undefined,
     };
 
-    await SearchHistory.create(searchData);
-  } catch {
+    console.log('💾 Saving search data:', JSON.stringify(searchData, null, 2));
+    const result = await SearchHistory.create(searchData);
+    console.log('✅ Search history saved successfully:', result._id);
+  } catch (error) {
+    console.error('❌ Failed to save search history:', error);
     // Silent fail for background search history save
   }
 }
