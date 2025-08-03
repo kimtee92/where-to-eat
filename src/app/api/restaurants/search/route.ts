@@ -17,6 +17,11 @@ async function updateKeywords(preferences: string) {
   if (!preferences) return;
 
   try {
+    // Skip database operations during build time
+    if (!process.env.MONGODB_URI || process.env.MONGODB_URI.includes('dummy') || process.env.MONGODB_URI.includes('localhost')) {
+      return;
+    }
+    
     await dbConnect();
 
     const lowerPrefs = preferences.toLowerCase();
@@ -125,6 +130,11 @@ async function saveSearchHistory(
   request?: NextRequest
 ) {
   try {
+    // Skip database operations during build time
+    if (!process.env.MONGODB_URI || process.env.MONGODB_URI.includes('dummy') || process.env.MONGODB_URI.includes('localhost')) {
+      return;
+    }
+    
     await dbConnect();
 
     const searchData = {

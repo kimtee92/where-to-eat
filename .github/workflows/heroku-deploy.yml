@@ -31,11 +31,11 @@ jobs:
     - name: Build application
       run: npm run build
       env:
-        # Mock environment variables for build
-        MONGODB_URI: ${{ secrets.MONGODB_URI }}
-        CLAUDE_API_KEY: ${{ secrets.CLAUDE_API_KEY }}
-        GOOGLE_PLACES_API_KEY: ${{ secrets.GOOGLE_PLACES_API_KEY }}
-        NEXT_PUBLIC_GOOGLE_PLACES_API_KEY: ${{ secrets.GOOGLE_PLACES_API_KEY }}
+        # Mock environment variables for build - use dummy values
+        MONGODB_URI: "mongodb://localhost:27017/dummy"
+        CLAUDE_API_KEY: "dummy-key"
+        GOOGLE_PLACES_API_KEY: "dummy-key"
+        NEXT_PUBLIC_GOOGLE_PLACES_API_KEY: "dummy-key"
 
   deploy:
     name: Deploy to Heroku

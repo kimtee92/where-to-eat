@@ -46,3 +46,13 @@ next-env.d.ts
 # CI/CD
 .env.production
 deployment-logs.txt
+
+# Documentation (keep only README.md)
+QUICKSTART.md
+HEROKU-CLI-FIX.md
+DEPLOYMENT-STATUS.md
+CICD-SETUP.md
+
+# Setup scripts (removed)
+setup-github-secrets.bat
+setup-*.sh
