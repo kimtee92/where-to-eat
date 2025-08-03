@@ -599,7 +599,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Step 1: Use Google Places to Find Places to Eat
-    // Enhanced keyword extraction from preferences
+    // Simplified and more faithful search query construction
     let searchQuery = `restaurants in ${location}`;
     let searchType = 'restaurant'; // Default type
     
@@ -634,71 +634,25 @@ export async function POST(request: NextRequest) {
       }
     }
     
-    if (preferences) {
-      const lowerPrefs = preferences.toLowerCase();
+    if (preferences && preferences.trim().length > 0) {
+      // Clean up preferences but preserve the user's actual words
+      const cleanPrefs = preferences
+        .replace(/[^\w\s&'-]/g, '') // Keep word characters, spaces, ampersands, apostrophes, and hyphens
+        .replace(/\s+/g, ' ') // Normalize multiple spaces
+        .trim();
       
-      // Enhanced cuisine detection
-      const cuisineKeywords = {
-        'italian': ['italian', 'pizza', 'pasta', 'spaghetti', 'lasagna', 'risotto'],
-        'chinese': ['chinese', 'dim sum', 'dumplings', 'noodles', 'stir fry', 'fried rice'],
-        'japanese': ['japanese', 'sushi', 'ramen', 'tempura', 'teriyaki', 'bento'],
-        'thai': ['thai', 'pad thai', 'curry', 'tom yum', 'green curry', 'red curry'],
-        'indian': ['indian', 'curry', 'biryani', 'tandoori', 'naan', 'masala'],
-        'mexican': ['mexican', 'tacos', 'burritos', 'quesadilla', 'enchiladas', 'nachos'],
-        'french': ['french', 'croissant', 'baguette', 'crepe', 'bistro', 'boeuf'],
-        'american': ['american', 'burger', 'bbq', 'steak', 'ribs', 'wings'],
-        'mediterranean': ['mediterranean', 'greek', 'hummus', 'falafel', 'gyros', 'kebab'],
-        'korean': ['korean', 'kimchi', 'bulgogi', 'bibimbap', 'kbbq', 'korean bbq'],
-        'vietnamese': ['vietnamese', 'pho', 'banh mi', 'spring rolls', 'bun bo hue'],
-        'spanish': ['spanish', 'paella', 'tapas', 'sangria', 'churros'],
-        'middle eastern': ['middle eastern', 'shawarma', 'kabab', 'lebanese', 'turkish']
-      };
-      
-      // Food style/occasion detection
-      const styleKeywords = {
-        'fast food': ['fast food', 'quick', 'drive through', 'takeaway', 'grab and go'],
-        'fine dining': ['fine dining', 'upscale', 'fancy', 'elegant', 'romantic', 'date night'],
-        'casual dining': ['casual', 'family', 'relaxed', 'comfortable'],
-        'cafe': ['cafe', 'coffee', 'breakfast', 'brunch', 'pastries'],
-        'bar': ['bar', 'drinks', 'cocktails', 'beer', 'wine', 'happy hour'],
-        'buffet': ['buffet', 'all you can eat', 'unlimited'],
-        'food truck': ['food truck', 'street food', 'mobile']
-      };
-      
-      // Dietary restrictions
-      const _dietaryKeywords = ['vegetarian', 'vegan', 'gluten free', 'halal', 'kosher', 'keto', 'paleo'];
-      
-      // Find matching cuisine
-      let foundCuisine = '';
-      for (const [cuisine, keywords] of Object.entries(cuisineKeywords)) {
-        if (keywords.some(keyword => lowerPrefs.includes(keyword))) {
-          foundCuisine = cuisine;
-          break;
-        }
-      }
-      
-      // Find matching style
-      let foundStyle = '';
-      for (const [style, keywords] of Object.entries(styleKeywords)) {
-        if (keywords.some(keyword => lowerPrefs.includes(keyword))) {
-          foundStyle = style;
-          break;
-        }
-      }
-      
-      // Build search query based on what we found
-      if (foundCuisine && foundStyle) {
-        searchQuery = `${foundCuisine} ${foundStyle} in ${searchLocation}`;
-      } else if (foundCuisine) {
-        searchQuery = `${foundCuisine} restaurants in ${searchLocation}`;
-      } else if (foundStyle) {
-        searchQuery = `${foundStyle} in ${searchLocation}`;
-        searchType = foundStyle.includes('cafe') ? 'cafe' : foundStyle.includes('bar') ? 'bar' : 'restaurant';
-      } else {
-        // If no specific keywords found, include the preferences in the search
-        const cleanPrefs = preferences.replace(/[^\w\s]/g, '').trim();
-        if (cleanPrefs.length > 0) {
-          searchQuery = `${cleanPrefs} restaurants in ${searchLocation}`;
+      if (cleanPrefs.length > 0) {
+        // Use user's exact preferences in the search query
+        searchQuery = `${cleanPrefs} restaurants in ${searchLocation}`;
+        
+        // Only detect if it's clearly a different establishment type
+        const lowerPrefs = cleanPrefs.toLowerCase();
+        if (lowerPrefs.includes('cafe') || lowerPrefs.includes('coffee shop')) {
+          searchType = 'cafe';
+          searchQuery = `${cleanPrefs} in ${searchLocation}`;
+        } else if (lowerPrefs.includes('bar') || lowerPrefs.includes('pub') || lowerPrefs.includes('drinks')) {
+          searchType = 'bar';
+          searchQuery = `${cleanPrefs} in ${searchLocation}`;
         }
       }
     }
@@ -962,31 +916,35 @@ ${i + 1}. ${r.name}
 `).join('')}
 
 ANALYSIS TASK:
-Please provide intelligent restaurant recommendations based on the user's preferences: "${preferences || 'general dining'}"
+Please provide intelligent restaurant recommendations based on the user's exact preferences: "${preferences || 'general dining'}"
+
+IMPORTANT: The user specifically requested "${preferences || 'general dining'}". Please prioritize restaurants that can serve exactly what they asked for, rather than making broad cuisine assumptions.
 
 Consider:
-1. **User Preferences**: Analyze their stated preferences for cuisine, dietary needs, occasion, style, price range, etc.
-2. **Proximity**: Prioritize closer restaurants when possible (distance shown in km)
-3. **Availability**: Prioritize open restaurants
-4. **Quality**: Consider ratings and reputation
-5. **Suitability**: Match the user's specific needs
+1. **Exact Food Match**: Does this restaurant serve the specific food items the user mentioned? (e.g., if they want "steak and chips", look for restaurants that serve steak and chips/fries)
+2. **User's Actual Words**: Use the user's exact preferences, don't generalize them into broad categories
+3. **Menu Compatibility**: Consider if the restaurant's type/style typically serves what the user wants
+4. **Proximity**: Prioritize closer restaurants when possible (distance shown in km)
+5. **Availability**: Prioritize open restaurants
+6. **Quality**: Consider ratings and reputation
+7. **Suitability**: Match the user's specific timing and occasion needs
 
 For each recommendation, provide:
-- Why it's well-suited for their stated preferences
-- How distance and convenience factor into the recommendation
-- How it matches their specific requirements
-- What makes it special for their needs
-- Quality and atmosphere insights
+- **Exact Food Match**: Explain how this restaurant can serve the specific food items they requested
+- **Menu Compatibility**: Describe what on their likely menu matches the user's exact preferences
+- **Distance & Convenience**: How proximity factors into the recommendation
+- **Quality & Atmosphere**: What makes it a good choice for their specific dining needs
+- **Why This Restaurant**: What specifically makes it suited to fulfill their request
 
 Return only a JSON object with this structure:
 {
   "recommendations": [
     {
       "restaurantIndex": 0,
-      "reasoning": "Detailed explanation focusing on why this restaurant is well-suited for their specific preferences and needs."
+      "reasoning": "Specific explanation of how this restaurant can fulfill their exact request for '${preferences || 'general dining'}', including what menu items they likely have that match."
     }
   ],
-  "summary": "A personalized summary highlighting how these recommendations match their preferences."
+  "summary": "A focused summary explaining how these restaurants can specifically provide what the user asked for: '${preferences || 'general dining'}'."
 }
 
 Important: Only return valid JSON, no additional text.
