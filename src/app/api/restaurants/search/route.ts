@@ -15,8 +15,11 @@ async function updateKeywords(preferences: string) {
   if (!preferences) return;
 
   try {
-    // Skip database operations during build time
-    if (!process.env.MONGODB_URI || process.env.MONGODB_URI.includes('dummy') || process.env.MONGODB_URI.includes('localhost')) {
+    // Skip database operations during build time or if no valid URI
+    if (!process.env.MONGODB_URI || 
+        process.env.MONGODB_URI.includes('dummy') || 
+        process.env.MONGODB_URI === 'mongodb://localhost:27017/where-to-eat') {
+      console.warn('Skipping keyword update - no valid MongoDB URI');
       return;
     }
     
@@ -128,8 +131,11 @@ async function saveSearchHistory(
   request?: NextRequest
 ) {
   try {
-    // Skip database operations during build time
-    if (!process.env.MONGODB_URI || process.env.MONGODB_URI.includes('dummy') || process.env.MONGODB_URI.includes('localhost')) {
+    // Skip database operations during build time or if no valid URI
+    if (!process.env.MONGODB_URI || 
+        process.env.MONGODB_URI.includes('dummy') || 
+        process.env.MONGODB_URI === 'mongodb://localhost:27017/where-to-eat') {
+      console.warn('Skipping search history save - no valid MongoDB URI');
       return;
     }
     
@@ -1076,8 +1082,14 @@ Important: Only return valid JSON, no additional text.
     }
 
     // Save search history and update keywords in the background
+    // Convert "Current Location" to coordinates for database storage
+    let locationForDatabase = searchLocation;
+    if (location === 'Current Location' && userCoords) {
+      locationForDatabase = `${userCoords.lat}, ${userCoords.lng}`;
+    }
+    
     Promise.all([
-      saveSearchHistory(searchLocation, preferences, searchQuery, rankedRestaurants.length, userCoords, request),
+      saveSearchHistory(locationForDatabase, preferences, searchQuery, rankedRestaurants.length, userCoords, request),
       updateKeywords(preferences)
     ]).catch(() => {
       // Silent fail for background analytics
