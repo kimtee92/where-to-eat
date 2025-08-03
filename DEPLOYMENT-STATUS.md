@@ -1,10 +1,16 @@
-# 🎉 CI/CD Setup Complete!
+# 🎉 CI/CD Setup Complete & Fixed!
 
 ## ✅ Build Status: SUCCESS
+## 🔧 Heroku CLI Issue: RESOLVED
 
 Your restaurant finder app is now ready for automated deployment to Heroku!
 
-## 📋 What's Working
+## � **Issue Resolved**
+**Problem:** `/bin/sh: 1: heroku: not found` during GitHub Actions deployment
+
+**Solution:** Updated the workflow to use built-in environment variable support in the `akhileshns/heroku-deploy` action instead of manually installing Heroku CLI.
+
+## �📋 What's Working
 
 ### ✅ **Build Process**
 - Next.js 15.4.5 compilation: **PASSED**
@@ -18,9 +24,9 @@ Your restaurant finder app is now ready for automated deployment to Heroku!
 - Build size: **11.2 kB** (excellent)
 
 ### ✅ **CI/CD Pipeline**
-- GitHub Actions workflow: **CONFIGURED**
+- GitHub Actions workflow: **FIXED & CONFIGURED**
 - Heroku deployment: **READY**
-- Environment variables: **CONFIGURED**
+- Environment variables: **AUTO-CONFIGURED**
 - Automated testing: **ENABLED**
 
 ## 🚀 Next Steps
