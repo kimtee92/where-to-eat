@@ -713,7 +713,7 @@ export async function POST(request: NextRequest) {
     if (!placesResponse.data.results || placesResponse.data.results.length === 0) {
       return NextResponse.json({
         restaurants: [],
-        message: 'No restaurants found in the specified location',
+        message: 'No places found in the specified location',
       });
     }
 
