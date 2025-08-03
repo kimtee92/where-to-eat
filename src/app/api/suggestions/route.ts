@@ -133,7 +133,7 @@ export async function POST(request: NextRequest) {
 
     const { timeRange = '7d' } = await request.json();
 
-    let dateFilter = new Date();
+    const dateFilter = new Date();
     
     switch (timeRange) {
       case '1d':

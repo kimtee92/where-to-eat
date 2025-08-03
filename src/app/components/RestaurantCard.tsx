@@ -1,5 +1,7 @@
 'use client';
 
+import Image from 'next/image';
+
 interface Restaurant {
   id: string;
   name: string;
@@ -103,7 +105,7 @@ export default function RestaurantCard({ restaurant, userLocation }: RestaurantC
   };
 
   const travelInfo = calculateTravelTime();
-  const currentDayHours = getCurrentDayHours();
+  const _currentDayHours = getCurrentDayHours();
 
   const renderStars = (rating: number) => {
     const stars = [];
@@ -131,9 +133,11 @@ export default function RestaurantCard({ restaurant, userLocation }: RestaurantC
       {/* Restaurant Image */}
       <div className="restaurant-image bg-appetizing-gradient position-relative">
         {restaurant.photoUrl ? (
-          <img
+          <Image
             src={restaurant.photoUrl}
             alt={restaurant.name}
+            width={400}
+            height={250}
             className="card-img-top h-100 w-100"
             style={{ objectFit: 'cover', height: '250px' }}
           />

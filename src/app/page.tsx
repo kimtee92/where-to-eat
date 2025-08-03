@@ -26,13 +26,13 @@ interface Restaurant {
 }
 
 export default function Home() {
-  const [isClient, setIsClient] = useState(false);
+  const [_isClient, setIsClient] = useState(false);
   const [restaurants, setRestaurants] = useState<Restaurant[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [userLocation, setUserLocation] = useState<{lat: number, lng: number} | null>(null);
   const [aiSummary, setAiSummary] = useState<string>('');
-  const [locationLoading, setLocationLoading] = useState(false);
+  const [_locationLoading, setLocationLoading] = useState(false);
   const [sortBy, setSortBy] = useState<'relevance' | 'distance' | 'rating'>('relevance');
   const [originalRestaurants, setOriginalRestaurants] = useState<Restaurant[]>([]);
   const [searchTerms, setSearchTerms] = useState<string>('');
@@ -202,7 +202,12 @@ export default function Home() {
     try {
       const endpoint = '/api/restaurants/search';
       
-      const searchData: any = { 
+      const searchData: {
+        location: string;
+        preferences: string;
+        radius: number;
+        userLocation?: { lat: number; lng: number };
+      } = { 
         location, 
         preferences,
         radius: radius * 1000 // Convert km to meters for Google API

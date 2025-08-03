@@ -1,7 +1,7 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { Client } from '@googlemaps/google-maps-services-js';
 
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
     const apiKey = process.env.GOOGLE_PLACES_API_KEY;
     
