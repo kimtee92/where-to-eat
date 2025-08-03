@@ -110,7 +110,7 @@ async function updateKeywords(preferences: string) {
         );
       }
     }
-  } catch (error) {
+  } catch (_error) {
     // Silent fail for background keyword updates
   }
 }
@@ -139,7 +139,7 @@ async function saveSearchHistory(
     };
 
     await SearchHistory.create(searchData);
-  } catch (error) {
+  } catch (_error) {
     // Silent fail for background search history save
   }
 }
@@ -182,7 +182,7 @@ async function getLocationTime(lat: number, lng: number): Promise<Date> {
       
       return localTime;
     }
-  } catch (error) {
+  } catch (_error) {
     // Fallback to current time if timezone API fails
   }
   
@@ -301,7 +301,7 @@ function isRestaurantOpen(openingHours?: string[], currentTime?: Date): boolean 
 }
 
 // Helper function to check if restaurant's opening time has already passed today
-function hasOpeningTimePassed(openingHours?: string[], currentTime?: Date): boolean {
+function _hasOpeningTimePassed(openingHours?: string[], currentTime?: Date): boolean {
   if (!openingHours || openingHours.length === 0) return false;
   
   const now = currentTime || new Date();

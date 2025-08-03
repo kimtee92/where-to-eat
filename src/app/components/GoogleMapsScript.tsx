@@ -13,7 +13,7 @@ export default function GoogleMapsScript() {
 
   const handleLoad = () => {
     console.log('Google Maps API loaded successfully');
-    (window as any).googleMapsLoaded = true;
+    (window as unknown as { googleMapsLoaded: boolean }).googleMapsLoaded = true;
     window.dispatchEvent(new Event('googleMapsLoaded'));
     
     // Inject additional dark mode styles for Google Places autocomplete
@@ -93,7 +93,7 @@ export default function GoogleMapsScript() {
       onLoad={handleLoad}
       onError={(e) => {
         console.error('Failed to load Google Maps API:', e);
-        (window as any).googleMapsLoadError = true;
+        (window as unknown as { googleMapsLoadError: boolean }).googleMapsLoadError = true;
       }}
     />
   );

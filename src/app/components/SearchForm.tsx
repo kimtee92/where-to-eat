@@ -17,8 +17,8 @@ const SearchForm: React.FC<SearchFormProps> = ({ onSearch, loading, onSortChange
   const [locationLoading, setLocationLoading] = useState(false);
   const [selectedLocationCoords, setSelectedLocationCoords] = useState<{lat: number, lng: number} | null>(null);
   const [searchRadius, setSearchRadius] = useState(10);
-  const [autocompleteReady, setAutocompleteReady] = useState(false);
-  const [googleMapsLoaded, setGoogleMapsLoaded] = useState(false);
+  const [_autocompleteReady, setAutocompleteReady] = useState(false);
+  const [_googleMapsLoaded, setGoogleMapsLoaded] = useState(false);
   const [loadingError, setLoadingError] = useState(false);
   
   const locationInputRef = useRef<HTMLInputElement>(null);
@@ -290,7 +290,7 @@ const SearchForm: React.FC<SearchFormProps> = ({ onSearch, loading, onSortChange
             onChange={(e) => setPreferences(e.target.value)}
           />
           <div className="form-text">
-            Describe the type of cuisine, dietary restrictions, or atmosphere you're looking for.
+            Describe the type of cuisine, dietary restrictions, or atmosphere you&apos;re looking for.
           </div>
         </div>
 
