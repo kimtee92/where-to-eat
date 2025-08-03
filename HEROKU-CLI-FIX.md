@@ -15,23 +15,11 @@ Error: Error: Command failed: heroku create ***
 ## Solution
 ✅ **Fixed by properly installing Heroku CLI and managing the deployment process:**
 
-### New Approach (✅ Works):
+### Final Approach (✅ Works):
 ```yaml
 - name: Install Heroku CLI
   run: |
     curl https://cli-assets.heroku.com/install-ubuntu.sh | sh
-    
-- name: Login to Heroku  
-  run: |
-    echo "${{ secrets.HEROKU_API_KEY }}" | heroku auth:token
-    
-- name: Create Heroku app (if not exists)
-  run: |
-    heroku apps:info ${{ secrets.HEROKU_APP_NAME }} || heroku create ${{ secrets.HEROKU_APP_NAME }}
-    
-- name: Set Heroku config vars
-  run: |
-    heroku config:set [environment variables] --app ${{ secrets.HEROKU_APP_NAME }}
     
 - name: Deploy to Heroku
   uses: akhileshns/heroku-deploy@v3.13.15
@@ -39,14 +27,20 @@ Error: Error: Command failed: heroku create ***
     heroku_api_key: ${{ secrets.HEROKU_API_KEY }}
     heroku_app_name: ${{ secrets.HEROKU_APP_NAME }}
     heroku_email: ${{ secrets.HEROKU_EMAIL }}
-    dontautocreate: true
+    dontautocreate: false
+    
+- name: Set Heroku config vars
+  run: |
+    heroku config:set [environment variables] --app ${{ secrets.HEROKU_APP_NAME }}
+  env:
+    HEROKU_API_KEY: ${{ secrets.HEROKU_API_KEY }}
 ```
 
 ## Key Changes
-1. **Removed separate Heroku CLI installation step**
-2. **Used built-in `heroku_config_vars` parameter** of the deploy action
-3. **Improved health check** with better error handling
-4. **Eliminated dependency on external Heroku CLI**
+1. **Let the action handle authentication and app creation**
+2. **Deploy first, then set config vars**
+3. **Use HEROKU_API_KEY environment variable** for CLI authentication
+4. **Simplified workflow with fewer authentication steps**
 
 ## Result
 🎉 **Deployment now works without CLI installation errors!**
