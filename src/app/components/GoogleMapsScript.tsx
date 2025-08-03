@@ -88,7 +88,7 @@ export default function GoogleMapsScript() {
 
   return (
     <Script
-      src={`https://maps.googleapis.com/maps/api/js?key=${process.env.NEXT_PUBLIC_GOOGLE_PLACES_API_KEY}&libraries=places&v=weekly`}
+      src={`https://maps.googleapis.com/maps/api/js?key=${process.env.NEXT_PUBLIC_GOOGLE_PLACES_API_KEY}&libraries=places&v=weekly&loading=async`}
       strategy="afterInteractive"
       onLoad={handleLoad}
       onError={(e) => {
