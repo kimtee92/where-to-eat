@@ -92,7 +92,8 @@ export async function GET() {
           const photoName = placeWithPhotos.photos[0].name;
           console.log('Photo name from API:', photoName);
           
-          // Try different URL construction approaches
+          // Try different URL construction approaches based on Google Places API v1 docs
+          
           // Approach 1: Direct use of photo name (current approach)
           const photoUrl1 = `https://places.googleapis.com/v1/${photoName}/media?maxWidthPx=400&maxHeightPx=400&key=${apiKey}`;
           
@@ -104,28 +105,50 @@ export async function GET() {
           // Approach 3: Use the name directly without extra v1 prefix
           const photoUrl3 = `https://places.googleapis.com/${photoName}/media?maxWidthPx=400&maxHeightPx=400&key=${apiKey}`;
           
+          // Approach 4: Try the exact format from Google's documentation
+          // Based on: GET https://places.googleapis.com/v1/{name=places/*/photos/*}/media
+          const photoUrl4 = `https://places.googleapis.com/v1/${photoName}/media?maxWidthPx=400&maxHeightPx=400`;
+          
+          // Approach 5: Try legacy Maps API format for comparison
+          const photoUrl5 = `https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photo_reference=${photoReference}&key=${apiKey}`;
+          
           console.log('URL approach 1 (direct):', photoUrl1.replace(apiKey, 'API_KEY'));
           console.log('URL approach 2 (reference):', photoUrl2.replace(apiKey, 'API_KEY'));
           console.log('URL approach 3 (no v1):', photoUrl3.replace(apiKey, 'API_KEY'));
+          console.log('URL approach 4 (header auth):', photoUrl4);
+          console.log('URL approach 5 (legacy):', photoUrl5.replace(apiKey, 'API_KEY'));
           
           // Test all approaches
           const photoResponse1 = await fetch(photoUrl1, { method: 'HEAD' });
           const photoResponse2 = await fetch(photoUrl2, { method: 'HEAD' });
           const photoResponse3 = await fetch(photoUrl3, { method: 'HEAD' });
+          const photoResponse4 = await fetch(photoUrl4, { 
+            method: 'HEAD',
+            headers: { 'X-Goog-Api-Key': apiKey }
+          });
+          const photoResponse5 = await fetch(photoUrl5, { method: 'HEAD' });
           
           console.log('Approach 1 status:', photoResponse1.status);
           console.log('Approach 2 status:', photoResponse2.status);
           console.log('Approach 3 status:', photoResponse3.status);
+          console.log('Approach 4 status:', photoResponse4.status);
+          console.log('Approach 5 status:', photoResponse5.status);
           
           const workingResponse = photoResponse1.ok ? photoResponse1 : 
                                  photoResponse2.ok ? photoResponse2 : 
-                                 photoResponse3.ok ? photoResponse3 : photoResponse1;
+                                 photoResponse3.ok ? photoResponse3 : 
+                                 photoResponse4.ok ? photoResponse4 : 
+                                 photoResponse5.ok ? photoResponse5 : photoResponse1;
           const workingUrl = photoResponse1.ok ? photoUrl1 : 
                             photoResponse2.ok ? photoUrl2 : 
-                            photoResponse3.ok ? photoUrl3 : photoUrl1;
+                            photoResponse3.ok ? photoUrl3 : 
+                            photoResponse4.ok ? photoUrl4 : 
+                            photoResponse5.ok ? photoUrl5 : photoUrl1;
           const workingApproach = photoResponse1.ok ? 'Direct name' : 
                                  photoResponse2.ok ? 'Photo reference' : 
-                                 photoResponse3.ok ? 'No v1 prefix' : 'None working';
+                                 photoResponse3.ok ? 'No v1 prefix' : 
+                                 photoResponse4.ok ? 'Header auth' : 
+                                 photoResponse5.ok ? 'Legacy API' : 'None working';
           
           results.tests.push({
             name: 'Places API v1 - Photo Media',
@@ -136,6 +159,8 @@ export async function GET() {
             approach1Status: photoResponse1.status,
             approach2Status: photoResponse2.status,
             approach3Status: photoResponse3.status,
+            approach4Status: photoResponse4.status,
+            approach5Status: photoResponse5.status,
             workingApproach: workingApproach,
             contentType: workingResponse.headers.get('content-type')
           });
