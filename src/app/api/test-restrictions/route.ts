@@ -90,6 +90,9 @@ export async function GET() {
         
         if (placeWithPhotos?.photos?.[0]?.name) {
           const photoName = placeWithPhotos.photos[0].name;
+          console.log('Photo name from API:', photoName);
+          
+          // The photo name should be the direct resource name
           const photoUrl = `https://places.googleapis.com/v1/${photoName}/media?maxWidthPx=400&maxHeightPx=400&key=${apiKey}`;
           
           const photoResponse = await fetch(photoUrl, { method: 'HEAD' });
@@ -99,6 +102,7 @@ export async function GET() {
             status: photoResponse.ok ? 'PASS' : 'FAIL',
             statusCode: photoResponse.status,
             photoUrl: photoUrl.replace(apiKey, 'API_KEY'),
+            photoName: photoName,
             contentType: photoResponse.headers.get('content-type')
           });
           

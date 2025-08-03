@@ -901,6 +901,7 @@ export async function POST(request: NextRequest) {
         let photoUrl = undefined;
         if (details.photos && details.photos.length > 0) {
           const photoName = details.photos[0].name;
+          // photoName already includes the full path like "places/PLACE_ID/photos/PHOTO_ID"
           photoUrl = `https://places.googleapis.com/v1/${photoName}/media?maxWidthPx=400&maxHeightPx=400&key=${process.env.GOOGLE_PLACES_API_KEY}`;
         }
 
