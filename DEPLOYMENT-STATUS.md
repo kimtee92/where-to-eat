@@ -1,4 +1,20 @@
-# 🎉 CI/CD Setup Complete & Fixed!
+# 🎉 CI/CD Setup Complete & Fixed! (v2)
+
+## ✅ Build Status: SUCCESS
+## 🔧 Heroku CLI Issue: RESOLVED (Updated)
+
+Your restaurant finder app is now ready for automated deployment to Heroku!
+
+## 🐛 **Issues Resolved**
+**Problem 1:** `/bin/sh: 1: heroku: not found` during GitHub Actions deployment
+**Problem 2:** `Unexpected input(s) 'heroku_config_vars'` - parameter doesn't exist
+
+**Solution:** Updated workflow to properly install Heroku CLI and use correct deployment sequence:
+1. Install Heroku CLI using Ubuntu script
+2. Authenticate with API key
+3. Create app if it doesn't exist
+4. Set environment variables
+5. Deploy code with `dontautocreate: true`Setup Complete & Fixed!
 
 ## ✅ Build Status: SUCCESS
 ## 🔧 Heroku CLI Issue: RESOLVED
